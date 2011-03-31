@@ -1,0 +1,4083 @@
+diff -Naur moodle1.9.9/backup/backuplib.php moodle1.9.9A/backup/backuplib.php
+--- moodle1.9.9/backup/backuplib.php	2010-04-24 05:33:15.000000000 +0530
++++ moodle1.9.9A/backup/backuplib.php	2011-03-22 14:44:44.000000000 +0530
+@@ -1158,6 +1158,68 @@
+         return fwrite ($bf,end_tag("FORMATDATA",2,true));
+     }
+ 
++//-----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++    function backup_course_module_locks ($bf,$preferences,$module_id) {
++        $locks_tag_open = false;
++        $locks = get_records("course_module_locks","moduleid",$module_id);
++        if ($locks) {
++            foreach ($locks as $lock) {
++                $lock_module_type = get_module_type ($preferences->backup_course,$lock->lockid);
++                if ($lock_module_type and $preferences->mods[$lock_module_type]->backup){
++                    if (! $locks_tag_open) {
++                        $locks_tag_open = true;
++                        fwrite ($bf,start_tag("LOCKS",6,true));
++                    }
++                    fwrite($bf,start_tag("LOCK",7,true));
++                    fwrite($bf,full_tag("LCKID",8,false,$lock->id));
++                    fwrite($bf,full_tag("LCKCOURSEID",8,false,$lock->courseid));
++                    fwrite($bf,full_tag("LCKMODULEID",8,false,$lock->moduleid));
++                    fwrite($bf,full_tag("LCKLOCKID",8,false,$lock->lockid));
++                    fwrite($bf,full_tag("LCKREQ",8,false,$lock->requirement));
++                    fwrite($bf,full_tag("LCKVISIBLEWHENLOCKED",8,false,$lock->visiblewhenlocked));
++                    fwrite($bf,full_tag("LCKSTYLEWHENLOCKED",8,false,$lock->stylewhenlocked));
++                    fwrite($bf,full_tag("LCKCHECKBOXFORCOMPLETE",8,false,$lock->checkboxforcomplete));
++                    fwrite($bf,full_tag("LCKSTYLEWHENCOMPLETE",8,false,$lock->stylewhencomplete));
++                    fwrite($bf,full_tag("LCKCHECKBOXESFORPREREQS",8,false,$lock->checkboxesforprereqs));                    
++                    fwrite($bf,end_tag("LOCK",7,true));                                        
++                }
++            }
++            if ($locks_tag_open) {
++                fwrite ($bf,end_tag("LOCKS",6,true));
++            }
++        }
++        return;
++    }
++
++    function backup_course_module_time_tracking ($bf,$preferences,$module_id) {
++        $time_spent_tag_open = false;
++        $time_spent = get_records("course_module_time_tracking","moduleid",$module_id);
++        if ($time_spent) {
++            foreach ($time_spent as $time_track) {
++                $time_track_module_type = get_module_type ($preferences->backup_course,$time_track->moduleid);
++                if ($time_track_module_type and $preferences->mods[$time_track_module_type]->backup){
++                    if (! $time_spent_tag_open) {
++                        $time_spent_tag_open = true;
++                        fwrite ($bf,start_tag("TIMESPENT",6,true));
++                    }
++                    fwrite($bf,start_tag("TSPENT",7,true));
++                    fwrite($bf,full_tag("TSID",8,false,$time_track->id));
++                    fwrite($bf,full_tag("TSCOURSEID",8,false,$time_track->courseid));
++                    fwrite($bf,full_tag("TSMODULEID",8,false,$time_track->moduleid));
++                    fwrite($bf,full_tag("TSMINTIME",8,false,$time_track->mintime));
++                    fwrite($bf,full_tag("TSMAXTIME",8,false,$time_track->maxtime));
++                    fwrite($bf,end_tag("TSPENT",7,true));
++                }
++            }
++            if ($time_spent_tag_open) {
++                fwrite ($bf,end_tag("TIMESPENT",6,true));
++            }
++        }
++        return;
++    }
++    
++//----------------------------author@Jalpa M Bhavsar ---- 13th september 2010-----------    
++
+     //Prints course's modules info (table course_modules)
+     //Only for selected mods in preferences
+     function backup_course_modules ($bf,$preferences,$section) {
+@@ -1226,11 +1288,19 @@
+                fwrite ($bf,full_tag("GROUPINGID",6,false,$course_module->groupingid));
+                fwrite ($bf,full_tag("GROUPMEMBERSONLY",6,false,$course_module->groupmembersonly));
+                fwrite ($bf,full_tag("IDNUMBER",6,false,$course_module->idnumber));
++               //--------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++               fwrite ($bf,full_tag("OLDID",6,false,$tok));       
++               //---------------------author@Jalpa M Bhavsar ---- 20th september 2010----------
+                // get all the role_capabilities overrides in this mod
+                write_role_overrides_xml($bf, $context, 6);
+                /// write role_assign code here
+                write_role_assignments_xml($bf, $preferences, $context, 6);
+                /// write role_assign code here
++               
++               //----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------			
++               	backup_course_module_locks($bf,$preferences,$tok);
++				backup_course_module_time_tracking($bf,$preferences,$tok);
++//----------------------------author@Jalpa M Bhavsar ---- 13th september 2010-----------   
+ 
+                fwrite ($bf,end_tag("MOD",5,true));
+            }
+diff -Naur moodle1.9.9/backup/restorelib.php moodle1.9.9A/backup/restorelib.php
+--- moodle1.9.9/backup/restorelib.php	2010-05-29 05:33:54.000000000 +0530
++++ moodle1.9.9A/backup/restorelib.php	2011-03-29 14:09:44.655437000 +0530
+@@ -1422,7 +1422,9 @@
+     function restore_create_sections(&$restore, $xml_file) {
+ 
+         global $CFG,$db;
+-
++//----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++	$mytableid = new object();
++	//----------------------------author@Jalpa M Bhavsar ---------20th September 2010 ------
+         $status = true;
+         //Check it exists
+         if (!file_exists($xml_file)) {
+@@ -1559,6 +1561,26 @@
+                                         } else {
+                                             $status = false;
+                                         }
++                                        
++                                        //----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++										
++									$mynewtable[$mod->oldid]->oldid = $mod->oldid;
++									$mynewtable[$mod->oldid]->newid = $newidmod;
++									$mynewtable[$mod->oldid]->locks = $mod->locks;
++										
++									if(!empty($mod->timetrack)){
++										foreach ($mod->timetrack as $keyl => $track){
++											$course_module_time_tracking->moduleid = $newidmod;
++											$course_module_time_tracking->courseid = $restore->course_id;
++											$course_module_time_tracking->mintime = $track->mintime;
++											$course_module_time_tracking->maxtime = $track->maxtime;
++											$nwspentid = insert_record("course_module_time_tracking",$course_module_time_tracking);
++											backup_putid ($restore->backup_unique_code,"course_module_time_tracking",$keyl,$nwspentid); //Can't recalc lockid here temporary store on backup id table for later use
++										}
++									}
++
++									//----------------------------author@Jalpa M Bhavsar ---- 13th september 2010-----------
++									
+                                         //Now, calculate the sequence field
+                                         if ($status) {
+                                             if ($sequence) {
+@@ -1588,6 +1610,25 @@
+         } else {
+             $status = false;
+         }
++        //--------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++	foreach($mynewtable as $key1 => $values){
++		if(!empty($values->locks)){
++			foreach ($values->locks as $key2 => $lock){
++
++				unset($lockid); unset($newid);
++				$lockid = $mynewtable[$lock->lockid]->newid;
++				$newid = $mynewtable[$lock->moduleid]->newid;
++
++				$course_module_lock->moduleid = $newid;
++				$course_module_lock->courseid = $restore->course_id;
++				$course_module_lock->lockid = $lockid;
++				$course_module_lock->requirement = $lock->requirement;
++				$nwlckid = insert_record("course_module_locks",$course_module_lock);
++				backup_putid ($restore->backup_unique_code,"course_module_locks",$key2,$nwlckid); //Can't recalc lockid here temporary store on 	backup id table for later use
++			}
++		}
++	}
++//----------------------------author@Jalpa M Bhavsar ---- 20th september 2010-----------
+         return $status;
+     }
+ 
+@@ -6256,10 +6297,85 @@
+                                 $this->info->tempmod->groupmembersonly;
+                             $this->info->tempsection->mods[$this->info->tempmod->id]->idnumber =
+                                 $this->info->tempmod->idnumber;
+-
++                            $this->info->tempsection->mods[$this->info->tempmod->id]->oldid =
++						$this->info->tempmod->oldid;
+                             unset($this->info->tempmod);
+                     }
+                 }
++                //----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++			if ($this->level == 8){         // lock info finished
++				switch ($tagName){
++					case "LOCK":
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->courseid = $this->info->templock->courseid;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->moduleid = $this->info->templock->moduleid;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->lockid = $this->info->templock->lockid;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->requirement = $this->info->templock->requirement;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->stylewhenlocked = $this->info->templock->stylewhenlocked;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->checkboxforcomplete= $this->info->templock->checkboxforcomplete;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->stylewhencomplete= $this->info->templock->stylewhencomplete;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->locks[$this->info->templock->id]->checkboxesforprereqs= $this->info->templock->checkboxesforprereqs;
++						unset($this->info->templock);
++						break;
++					case "TSPENT":
++						$this->info->tempsection->mods[$this->info->tempmod->id]->timetrack[$this->info->temptspent->id]->courseid = $this->info->temptspent->courseid;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->timetrack[$this->info->temptspent->id]->moduleid = $this->info->temptspent->moduleid;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->timetrack[$this->info->temptspent->id]->mintime = $this->info->temptspent->mintime;
++						$this->info->tempsection->mods[$this->info->tempmod->id]->timetrack[$this->info->temptspent->id]->maxtime = $this->info->temptspent->maxtime;
++						unset($this->info->temptspent);
++						break;
++					default:
++						break;
++				}
++			}
++			if ($this->level == 9){         // lock info capture
++				switch ($tagName){
++					case "LCKID":
++						$this->info->templock->id = $this->getContents();
++						break;
++					case "LCKCOURSEID":
++						$this->info->templock->courseid = $this->getContents();
++						break;
++					case "LCKMODULEID":
++						$this->info->templock->moduleid = $this->getContents();
++						break;
++					case "LCKLOCKID":
++						$this->info->templock->lockid = $this->getContents();
++						break;
++					case "LCKREQ":
++						$this->info->templock->requirement = $this->getContents();
++						break;
++					case "LCKSTYLEWHENLOCKED":
++						$this->info->templock->stylewhenlocked = $this->getContents();
++						break;
++					case "LCKCHECKBOXFORCOMPLETE":
++						$this->info->templock->checkboxforcomplete = $this->getContents();
++						break;
++					case "LCKSTYLEWHENCOMPLETE":
++						$this->info->templock->stylewhencomplete = $this->getContents();
++						break;
++					case "LCKCHECKBOXESFORPREREQS":
++						$this->info->templock->checkboxesforprereqs = $this->getContents();
++						break;
++					case "TSID":
++						$this->info->temptspent->id = $this->getContents();
++						break;
++					case "TSCOURSEID":
++						$this->info->temptspent->courseid = $this->getContents();
++						break;
++					case "TSMODULEID":
++						$this->info->temptspent->moduleid = $this->getContents();
++						break;
++					case "TSMINTIME":
++						$this->info->temptspent->mintime = $this->getContents();
++						break;
++					case "TSMAXTIME":
++						$this->info->temptspent->maxtime = $this->getContents();
++						break;
++					default:
++						break;
++				}
++			}
++			//-----------------------author@Jalpa M Bhavsar ----- 14th september 2010------------------------
+                 if ($this->level == 7) {
+                     switch ($tagName) {
+                         case "ID":
+@@ -6295,6 +6411,9 @@
+                         case "IDNUMBER":
+                             $this->info->tempmod->idnumber = $this->getContents();
+                             break;
++                        case "OLDID":
++                            $this->info->tempmod->oldid = $this->getContents();
++                            break;
+                         default:
+                             break;
+                     }
+diff -Naur moodle1.9.9/blocks/activity_locking/block_activity_locking.php moodle1.9.9A/blocks/activity_locking/block_activity_locking.php
+--- moodle1.9.9/blocks/activity_locking/block_activity_locking.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/blocks/activity_locking/block_activity_locking.php	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,37 @@
++<?PHP 
++
++class block_activity_locking extends block_base {
++    function init() {
++        $this->title = get_string('activitylocking', 'lock');
++        $this->version = 2007101100;
++    }
++
++    function get_content() {
++        global $USER, $CFG;
++
++        if ($this->content !== NULL) {
++            return $this->content;
++        }
++
++        $this->content = new stdClass;
++        $this->content->text = '';
++        $this->content->footer = '';
++        
++        if (empty($this->instance)) {
++            return $this->content;
++        }
++    
++        $course = get_record('course', 'id', $this->instance->pageid);
++        $context = get_context_instance(CONTEXT_COURSE, $course->id);
++        if (has_capability('moodle/course:manageactivities', $context)) {
++       
++        	$courselocks = count_records('course_module_locks', 'courseid', $course->id);
++        
++        	$this->content->text .= '<p>There are '.$courselocks.' locks within this course.</p>';
++        }
++        
++        return $this->content;
++    }
++}
++
++?>
+\ No newline at end of file
+diff -Naur moodle1.9.9/blocks/activity_locking/db/install.xml moodle1.9.9A/blocks/activity_locking/db/install.xml
+--- moodle1.9.9/blocks/activity_locking/db/install.xml	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/blocks/activity_locking/db/install.xml	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,37 @@
++<?xml version="1.0" encoding="UTF-8" ?>
++<XMLDB PATH="blocks/activity_locking/db" VERSION="20100909" COMMENT="XMLDB file for Moodle blocks/activity_locking"
++    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
++>
++  <TABLES>
++    <TABLE NAME="course_module_locks" COMMENT="Default comment for the table, please edit me" NEXT="course_module_time_tracking">
++      <FIELDS>
++        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true" ENUM="false" NEXT="courseid"/>
++        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="true" DEFAULT="0" SEQUENCE="false" ENUM="false" PREVIOUS="id" NEXT="moduleid"/>
++        <FIELD NAME="moduleid" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="true" SEQUENCE="false" ENUM="false" COMMENT="adf" PREVIOUS="courseid" NEXT="lockid"/>
++        <FIELD NAME="lockid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false" ENUM="false" COMMENT="adsfaf" PREVIOUS="moduleid" NEXT="requirement"/>
++        <FIELD NAME="requirement" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false" ENUM="false" COMMENT="adf" PREVIOUS="lockid" NEXT="visiblewhenlocked"/>
++        <FIELD NAME="visiblewhenlocked" TYPE="int" LENGTH="1" NOTNULL="true" UNSIGNED="true" DEFAULT="1" SEQUENCE="false" ENUM="false" COMMENT="asdfa" PREVIOUS="requirement" NEXT="stylewhenlocked"/>
++        <FIELD NAME="stylewhenlocked" TYPE="char" LENGTH="200" NOTNULL="true" DEFAULT="locked" SEQUENCE="false" ENUM="false" COMMENT="asdgfa" PREVIOUS="visiblewhenlocked" NEXT="checkboxforcomplete"/>
++        <FIELD NAME="checkboxforcomplete" TYPE="int" LENGTH="1" NOTNULL="true" UNSIGNED="true" DEFAULT="1" SEQUENCE="false" ENUM="false" COMMENT="dasf" PREVIOUS="stylewhenlocked" NEXT="stylewhencomplete"/>
++        <FIELD NAME="stylewhencomplete" TYPE="char" LENGTH="200" NOTNULL="true" SEQUENCE="false" ENUM="false" COMMENT="asdf" PREVIOUS="checkboxforcomplete" NEXT="checkboxesforprereqs"/>
++        <FIELD NAME="checkboxesforprereqs" TYPE="int" LENGTH="1" NOTNULL="true" UNSIGNED="true" DEFAULT="1" SEQUENCE="false" ENUM="false" COMMENT="asdf" PREVIOUS="stylewhencomplete"/>
++      </FIELDS>
++      <KEYS>
++        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
++      </KEYS>
++    </TABLE>
++    <TABLE NAME="course_module_time_tracking" COMMENT="Default comment for the table, please edit me" PREVIOUS="course_module_locks">
++      <FIELDS>
++        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true" ENUM="false" NEXT="courseid"/>
++        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false" ENUM="false" PREVIOUS="id" NEXT="moduleid"/>
++        <FIELD NAME="moduleid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false" ENUM="false" PREVIOUS="courseid" NEXT="mintime"/>
++        <FIELD NAME="mintime" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="0000" SEQUENCE="false" ENUM="false" PREVIOUS="moduleid" NEXT="maxtime"/>
++        <FIELD NAME="maxtime" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="0000" SEQUENCE="false" ENUM="false" PREVIOUS="mintime"/>
++      </FIELDS>
++      <KEYS>
++        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
++      </KEYS>
++    </TABLE>
++  </TABLES>
++</XMLDB>
+\ No newline at end of file
+diff -Naur moodle1.9.9/blocks/activity_locking/db/mysql.php moodle1.9.9A/blocks/activity_locking/db/mysql.php
+--- moodle1.9.9/blocks/activity_locking/db/mysql.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/blocks/activity_locking/db/mysql.php	2011-03-15 14:07:14.000000000 +0530
+@@ -0,0 +1,25 @@
++<?PHP
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------          
++function activity_locking_upgrade($oldversion=0) {
++
++    global $CFG;
++    
++ //   if ($oldversion < 2007101100) {
++
++   /*     execute_sql(" ALTER TABLE `{$CFG->prefix}course_modules` ADD `visiblewhenlocked` TINYINT( 1 ) UNSIGNED NOT NULL default '1' AFTER `visible`");
++       
++ execute_sql(" ALTER TABLE `{$CFG->prefix}course_modules` ADD `checkboxesforprereqs` TINYINT( 1 ) UNSIGNED NOT NULL default '1' AFTER `visible`");
++  */      
++
++  //  }
++    $result = true;
++
++    if ($oldversion < 2005092800 and $result) {
++        $result = true; //Nothing to do
++    }
++
++    //Finally, return result
++    return $result;
++}
++
++//----------------------------------author@Manish - 23 Aug 2010------------------------------------------
+diff -Naur moodle1.9.9/blocks/activity_locking/db/mysql.sql moodle1.9.9A/blocks/activity_locking/db/mysql.sql
+--- moodle1.9.9/blocks/activity_locking/db/mysql.sql	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/blocks/activity_locking/db/mysql.sql	2011-03-15 14:08:00.000000000 +0530
+@@ -0,0 +1,40 @@
++# ---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++# Table structure for table `course_module_locks`
++
++# CREATE TABLE `prefix_course_module_locks` (
++#	`id` int(10) unsigned NOT NULL auto_increment,
++#  	`courseid` int(10) unsigned NOT NULL default '0',
++#  	`moduleid` int(10) unsigned NOT NULL default '0',
++#	`lockid` int(10) unsigned NOT NULL default '0',
++#  	`requirement` varchar(10) NOT NULL default '',
++#	`visiblewhenlocked` TINYINT( 1 ) UNSIGNED NOT NULL default '1',
++#	`stylewhenlocked` VARCHAR( 200 ) NULL default 'locked',
++# 	`checkboxforcomplete` TINYINT( 1 ) UNSIGNED NOT NULL default '0',
++# 	`stylewhencomplete` VARCHAR( 200 ) NULL default '',
++#	`checkboxesforprereqs` TINYINT( 1 ) UNSIGNED NOT NULL default '1',
++	
++#  	PRIMARY KEY  (id),
++#  	UNIQUE KEY id (id),
++#  	KEY lockid (lockid),
++#  	KEY moduleid (moduleid),
++#  	KEY courseid (courseid)
++#	) TYPE=MyISAM;
++
++# Table structure for table `course_module_time_tracking`
++
++# CREATE TABLE `prefix_course_module_time_tracking` (
++#	`id` int(10) unsigned NOT NULL auto_increment,
++#  	`courseid` int(10) unsigned NOT NULL default '0',
++#  	`moduleid` int(10) unsigned NOT NULL default '0',
++#	`mintime` VARCHAR( 10 ) NOT NULL default '00:00',
++#	`maxtime` VARCHAR( 10 ) NOT NULL default '00:00',
++
++#  	PRIMARY KEY  (id),
++#  	UNIQUE KEY id (id),
++#  	KEY moduleid (moduleid),
++#  	KEY courseid (courseid)
++#	) TYPE=MyISAM;
++
++
++# --------------------------------------------------------
++# ----------------------------------author@Manish - 23 Aug 2010------------------------------------------
+diff -Naur moodle1.9.9/blocks/activity_locking/db/upgrade.php moodle1.9.9A/blocks/activity_locking/db/upgrade.php
+--- moodle1.9.9/blocks/activity_locking/db/upgrade.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/blocks/activity_locking/db/upgrade.php	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,26 @@
++<?php
++    if ($result && $oldversion < 2010090901) {
++
++
++    /// Define field id to be added to course_module_locks
++        $table = new XMLDBTable('course_module_locks');
++        $field = new XMLDBField('id');
++        $field->setAttributes(XMLDB_TYPE_INTEGER, '10', XMLDB_UNSIGNED, XMLDB_NOTNULL, XMLDB_SEQUENCE, null, null, null, null);
++
++    /// Launch add field id
++        $result = $result && add_field($table, $field);
++    }
++    	
++    
++        if ($result && $oldversion < 2010090902) {
++
++    /// Define field id to be added to course_module_time_tracking
++        $table = new XMLDBTable('course_module_time_tracking');
++        $field = new XMLDBField('id');
++        $field->setAttributes(XMLDB_TYPE_INTEGER, '10', XMLDB_UNSIGNED, XMLDB_NOTNULL, XMLDB_SEQUENCE, null, null, null, null);
++
++    /// Launch add field id
++        $result = $result && add_field($table, $field);
++    }
++    
++ ?>
+\ No newline at end of file
+diff -Naur moodle1.9.9/blocks/admin/block_admin.php moodle1.9.9A/blocks/admin/block_admin.php
+--- moodle1.9.9/blocks/admin/block_admin.php	2010-02-25 05:33:03.000000000 +0530
++++ moodle1.9.9A/blocks/admin/block_admin.php	2011-03-21 15:02:24.000000000 +0530
+@@ -160,11 +160,25 @@
+         }
+ 
+     /// View course reports
+-        if ($course->id !== SITEID and has_capability('moodle/site:viewreports', $context)) { // basic capability for listing of reports
++  /*      if ($course->id !== SITEID and has_capability('moodle/site:viewreports', $context)) { // basic capability for listing of reports
+             $this->content->items[]='<a href="'.$CFG->wwwroot.'/course/report.php?id='.$this->instance->pageid.'">'.get_string('reports').'</a>';
+             $this->content->icons[]='<img src="'.$CFG->pixpath.'/i/stats.gif" class="icon" alt="" />';
++        }*/
++        
++//--------------------SCORM/QUIZ Activity Locking (Conditional Activities), added--------------
++        // Changed to provide access to activity reports to students. Mayank,CDAC
++        if ($course->id !== SITEID and (has_capability('moodle/site:viewreports', $context) or has_capability('moodle/legacy:student', $context, $USER->id, false))) { // basic capability for listing of reports
++            if(has_capability('moodle/site:viewreports', $context))
++            {
++        	$this->content->items[]='<a href="'.$CFG->wwwroot.'/course/report.php?id='.$this->instance->pageid.'">'.get_string('reports').'</a>';
++            }
++            else 
++            {
++            $this->content->items[]='<a href="'.$CFG->wwwroot.'/course/report/activity_lock_report/index.php?id='.$course->id.'&user='.$USER->id.'">'."SCORM/Quiz Activity Report".'</a>';
++            }
++            $this->content->icons[]='<img src="'.$CFG->pixpath.'/i/stats.gif" class="icon" alt="" />';
+         }
+-
++//----------------------------------author@Mayank--------------------------
+     /// Manage questions
+         if ($course->id !== SITEID){
+             $questionlink = '';
+diff -Naur moodle1.9.9/course/activity_lockmoveactivity.php moodle1.9.9A/course/activity_lockmoveactivity.php
+--- moodle1.9.9/course/activity_lockmoveactivity.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/activity_lockmoveactivity.php	2011-03-15 14:10:02.000000000 +0530
+@@ -0,0 +1,150 @@
++<?PHP
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++require_once("../config.php");
++require_once("lib.php");
++require_once($CFG->libdir.'/locklib.php');
++require_once($CFG->libdir.'/gradelib.php');
++
++$id   = required_param('id', PARAM_INT);          // Course module ID
++$type = required_param('type',PARAM_TEXT);
++if($type !== "unlock" && $type !== "move"){
++	error("There was some problem will accessing page.");
++}
++if (!$course_module_locks = get_record("course_modules", "id", $id)) {
++	error("Module ID was incorrect");
++}
++
++if (! $course = get_record("course", "id", $course_module_locks->course)) {
++	error("Course ID was incorrect");
++}
++
++$sesskey = sesskey();
++$path = $CFG->wwwroot.'/course';
++$str->lock           = get_string("lock","lock");
++$str->unlock         = get_string("unlock","lock");
++		
++require_login($course);
++$context = get_context_instance(CONTEXT_COURSE, $course->id);
++require_capability('moodle/course:manageactivities', $context);
++
++get_all_mods($course->id, $mods, $modnames, $modnamesplural, $modnamesused);
++
++$modinstance = get_record($mods[$id]->modname, "id", $mods[$id]->instance);
++
++$navigation = build_navigation($modinstance->name.' '.$strlocks);
++print_header($course->shortname.': '.$strlocks, $course->fullname, $navigation);
++if(strcasecmp($type,"move")==0){
++print_heading_with_help(" $modinstance->name".get_string("moveingactivity","lock"),'movinglocks','al');   // added above with help button
++}
++if(strcasecmp($type,"unlock")==0){
++print_heading_with_help(" $modinstance->name".get_string("unlockactivity","lock"),'unlocks','al');   // added above with help button
++}
++
++///--------------------
++
++echo "<br/>";
++
++// Prepare table header
++$table1->class = 'generaltable boxaligncenter';
++$table1->head = array(get_string('activity_column', 'lock'),
++get_string('mintimespent_column', 'lock'),
++get_string('maxtimespent_column', 'lock'),
++get_string('access_column', 'lock'),
++get_string('grade_column', 'lock'));
++$table1->align = array('left', 'left','left','left','left');
++$table1->size = array('10%','5%','5%','5%','5%');
++
++$lockedactivities = get_locks($course_module_locks);
++$counter1 = $counter2 = 1;
++
++//if($counter == 1 ){print_heading(get_string('lockedbythisactivity', 'lock')." $modinstance->name");}
++
++foreach($lockedactivities as $lock){
++	
++		if($lock->moduleid  ==  $course_module_locks->id){
++			$sectionmod = get_field("course_modules","section","id",$lock->lockid,"course",$lock->courseid);
++			$mod = &$mods[$lock->lockid];
++		}else{
++			$sectionmod = get_field("course_modules","section","id",$lock->moduleid,"course",$lock->courseid);
++			$mod = &$mods[$lock->moduleid];
++		}
++		
++		if($mod){
++			$row = array();
++			$instance = get_record("$mod->modname", "id", "$mod->instance");
++			$row[] = "<A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\"".
++	       					"   TITLE=\"$mod->modfullname\">".
++	       					"<IMG BORDER=0 VALIGN=absmiddle SRC=\"$CFG->wwwroot/mod/$mod->modname/icon.gif\" ".
++							"HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\"></A>&nbsp;&nbsp;".
++							"<A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\">".
++							"$instance->name</A>";
++
++			if($lock->moduleid  ==  $course_module_locks->id){
++				// Checking and adding row for time spent
++				if(strlen(stripos($lock->requirement,"T")) != 0){
++					$timeinfo = get_record("course_module_time_tracking","courseid",$mod->course,"moduleid",$mod->id);
++					if($timeinfo){
++						$minmax = "";
++						if(strcasecmp($timeinfo->mintime,"00:00") != 0){ $row[] = $timeinfo->mintime ; }else{$row[] = '00:00';}
++						if(strcasecmp($timeinfo->maxtime,"00:00") != 0){ $row[] = $timeinfo->maxtime; }else{$row[] = '00:00';}
++						unset($timeinfo);
++					}else{ $row[] = "-"; $row[] = "-"; }
++				}else{ $row[] = "-"; $row[] = "-";}
++	
++				if(strlen(stripos($lock->requirement,"A")) != 0){
++					$row[] = "<IMG BORDER=0 VALIGN=absmiddle SRC=\"$CFG->pixpath/t/clear.gif\" ".
++									"HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\" title='".get_string("title_access","lock")."'>";				
++				}else{
++					$row[] = "-";
++				}
++	
++				if(strlen(stripos($lock->requirement,"G")) != 0){
++					$gradeinfo = get_record("grade_items","courseid",$mod->course,"itemname",$instance->name,"iteminstance",$mod->instance);
++					if($gradeinfo){
++						$value = (int)$gradeinfo->gradepass;
++						if($value > 0){ $row[] = (int)$gradeinfo->gradepass.' / '.(int)$gradeinfo->grademax; }
++						else{ $row[] = "-"; }
++					}
++				}else{
++					$row[] = "-";
++				}
++		
++			$table1->data[$counter1] = $row;
++			$counter1++;
++		}else{
++			$table2->data[$counter2] = $row;
++			$counter2++;
++		}
++		
++			
++		}
++}
++
++
++	$table2->class = 'generaltable boxaligncenter';
++	$table2->head = array(get_string('activity_column', 'lock'));
++	$table2->width = 400;
++	$table2->align = array('left');
++	$table2->size = array('10%');
++	
++	if($counter1 > 1){
++	print_heading(get_string('lockedbythisactivity'.$type, 'lock')." $modinstance->name");
++	print_table($table1);
++	}
++	if($counter2 > 1 && strcasecmp($type,"move") == 0){
++	print_heading(" $modinstance->name".get_string('lockedtothisactivity'.$type, 'lock'));	
++	print_table($table2);
++	}
++	echo "<br/><br/><center>";
++	if($counter1 > 1 || $counter2 > 1){
++		echo "<form action=\"lock.php?id=$id&sesskey=$USER->sesskey&action=unlock&type=$type\" method=\"post\">";
++		echo "<input type=\"submit\" value=\"".get_string("unlockactivitylocks", "lock")."\">";	
++	}
++	
++	echo "<input type=\"button\" value=\"".get_string("cancelactivitylocks", "lock")."\" onclick=\"javascript:history.go(-1);\" /></form>";
++	echo "<br/><br/>";
++////------------------------------
++unset($type);
++print_footer($course);
++//----------------------------------author@Jalpa - 27 Aug 2010------------------------------------------
++?>
+diff -Naur moodle1.9.9/course/lib.php moodle1.9.9A/course/lib.php
+--- moodle1.9.9/course/lib.php	2010-02-26 05:33:08.000000000 +0530
++++ moodle1.9.9A/course/lib.php	2011-03-17 17:13:42.000000000 +0530
+@@ -1429,10 +1429,75 @@
+                 }
+ 
+                 $linkcss = $mod->visible ? "" : " class=\"dimmed\" ";
++                
++//-----------------------------COMMENTED for SCORM/QUIZ Activity Locking (Conditional Activities), commented---------------------------				
++/*
+                 echo '<a '.$linkcss.' '.$extra.        // Title unnecessary!
+                      ' href="'.$CFG->wwwroot.'/mod/'.$mod->modname.'/view.php?id='.$mod->id.'">'.
+                      '<img src="'.$icon.'" class="activityicon" alt="" /> <span>'.
+                      $instancename.$altname.'</span></a>';
++*/
++//-------------------------------author@Jalpa -------- 9th September 2010 ---------------------------------------
++//--------------edited@Vishal-----16th March 2011-------------------------------------------------------------
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++            //description:$modlockcs variable is need for tracking checkboxesforprereqs, delay, mintime, maxtime,
++				require_once($CFG->libdir.'/locklib.php');
++                $modlocks=get_CourseModuleLocksactivity_lock2($mod->id);
++                $locks=islocked_ESP2($mod);         
++                $locked=false;
++				// for each starts
++				foreach( $locks AS $key => $value){           
++					if($value["overallstatus"]== "closed")
++						$locked=true;
++				} // for each ends
++ 
++               $capabilities= array("moodle/legacy:admin","moodle/legacy:editingteacher", "moodle/legacy:teacher","moodle/legacy:coursecreator");
++               $cap =  has_any_capability($capabilities, get_context_instance(CONTEXT_COURSE, $course->id), $USER->id, false);
++
++               //use of $cap: locked module  and their prerequisite always visible to admin, teacher, nonediting teacher, course creator.
++			   
++                if ( $locked ) { // allow link if module is not locked, or if module is completed
++					if( $modlocks->visiblewhenlocked  || $cap) {
++                            echo '<a '.$linkcss.' '.$extra.        // Title unnecessary!
++                                    ' href="'.$CFG->wwwroot.'/mod/'.$mod->modname.'/view.php?id='.$mod->id.'">'.
++                                    '<img src="'.$icon.'" class="activityicon" alt="" /> <span>'.
++                                    $instancename.$altname.'</span></a>';   
++                    }
++                } else {
++                    echo '<a '.$linkcss.' '.$extra.        // Title unnecessary!
++                            ' href="'.$CFG->wwwroot.'/mod/'.$mod->modname.'/view.php?id='.$mod->id.'">'.
++                            '<img src="'.$icon.'" class="activityicon" alt="" /> <span>'.
++                            $instancename.$altname.'</span></a>';
++                }
++
++                // for students, prerequiset should be vesible or not.
++                if ($isediting || !isguestuser() ) { // !isguestuser() ||
++                    if ( $locks and $mod->modname != "label") {
++                        //desctiption: Activity locking tracking is now tracked from course_module_locks table, instade of course_modules table so changed $mod to $modlocks
++                        //prerequisite only visible if it is set to yes or role having editing previliges.
++                        if($modlocks->visiblewhenlocked || $cap ) {
++                            if ($modlocks->checkboxesforprereqs ||  $cap) {
++								// for each starts 
++                               foreach( $locks as $key=>$value){
++                                    $instance = get_record($mods[$key]->modname, "id", $mods[$key]->instance);
++									//$value will be 'T' 'A' 'G' 'overallstatus', $key will be lockid
++                                        if($value["overallstatus"]=="open"){  // esp2
++                                            echo "&nbsp;<img src=\"$CFG->pixpath/t/open.gif\" height=\"11\" width=\"11\"".
++                                                    " title=\"".get_string("predecessorcomplete", "lock").": ".urldecode($instance->name)."\"".
++                                                    " alt=\"".get_string("predecessorcomplete", "lock").": ".urldecode($instance->name)."\">";
++                                        } else {
++                                            echo "&nbsp;<img src=\"$CFG->pixpath/t/closed.gif\" height=\"11\" width=\"11\"".
++                                                    " title=\"".get_string("predecessornotcomplete", "lock").": ".urldecode($instance->name)."\"".
++                                                    " alt=\"".get_string("predecessornotcomplete", "lock").": ".urldecode($instance->name)."\">";
++                                        }
++                                   
++                                }//for each ends
++                            }
++						}
++                    }
++                }
++//----------------------------------author@Manish Kumar Tamta - 23 Aug 2010------------------------------------------			
++
+ 
+                 if (!empty($CFG->enablegroupings) && !empty($mod->groupingid) && has_capability('moodle/course:managegroups', get_context_instance(CONTEXT_COURSE, $course->id))) {
+                     if (!isset($groupings)) {
+@@ -2703,6 +2768,12 @@
+         $str->groupsnone     = get_string("groupsnone");
+         $str->groupsseparate = get_string("groupsseparate");
+         $str->groupsvisible  = get_string("groupsvisible");
++        //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++// getting strings for alt attribute for a Icon like lock.gif and unlock.gif
++        $str->lock           = get_string("lock","lock");
++        $str->unlock         = get_string("unlock","lock");
++//----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++//-----------------------------------EDITED@vishal - 16th Mar 2011
+         $sesskey = sesskey();
+     }
+ 
+@@ -2766,11 +2837,22 @@
+ 
+     if (has_capability('moodle/course:update', get_context_instance(CONTEXT_COURSE, $mod->course))) {
+         if ($moveselect) {
+-            $move =     '<a class="editing_move" title="'.$str->move.'" href="'.$path.'/mod.php?copy='.$mod->id.
++			//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++// if activity is locked and trying to move the activities	
++            if($lockactivities = get_locks($mod)) { // changes for get_lock function
++            $move =     '<a class="editing_move" title="'.$str->move.'" href="'.$path.'/activity_lockmoveactivity.php?id='.$mod->id.
++                        '&amp;sesskey='.$sesskey.$section.'&action=unlock&type=move"><img'.
++                        ' src="'.$CFG->pixpath.'/t/move.gif" class="iconsmall" '.
++                        ' alt="'.$str->move.'" /></a>'."\n";
++        }else {
++                $move =     '<a class="editing_move" title="'.$str->move.'" href="'.$path.'/mod.php?copy='.$mod->id.
+                         '&amp;sesskey='.$sesskey.$section.'"><img'.
+                         ' src="'.$CFG->pixpath.'/t/move.gif" class="iconsmall" '.
+                         ' alt="'.$str->move.'" /></a>'."\n";
+-        } else {
++            }
++//----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------	 
++        
++       } else {
+             $move =     '<a class="editing_moveup" title="'.$str->moveup.'" href="'.$path.'/mod.php?id='.$mod->id.
+                         '&amp;move=-1&amp;sesskey='.$sesskey.$section.'"><img'.
+                         ' src="'.$CFG->pixpath.'/t/up.gif" class="iconsmall" '.
+@@ -2808,16 +2890,49 @@
+                         ' alt="'.$str->moveright.'" /></a>'."\n";
+         }
+     }
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++    require_once($CFG->libdir.'/locklib.php');
++    $locked=islocked_ESP2($mod);
++    if (!empty($locked)) { 
++        $unlock = '<a title="'.$str->unlock.'" href="'.$path.'/activity_lockmoveactivity.php?id='.$mod->id.
++                '&amp;sesskey='.$sesskey.$section.'&action=unlock&type=unlock"><img'.
++                ' src="'.$CFG->wwwroot.'/pix/t/unlock.gif" class="iconsmall" '.
++                ' alt="'.$str->unlock.'" /></a>';
++    } else {
++        $unlock = '';
++    }
++    
++    $lockicon='';
++    require_once($CFG->libdir.'/ddllib.php');
++    $table_lock = new XMLDBTable('course_module_locks');
++    $table_time_track = new XMLDBTable('course_module_time_tracking');
++    
++    if(table_exists($table_lock) && table_exists($table_time_track)){
++    	$lockicon='<a title="'.$str->lock.'" href="'.$path.'/lock.php?id='.$mod->id.
++            '&amp;sesskey='.$sesskey.$section.'"><img'.
++            ' src="'.$CFG->wwwroot.'/pix/t/lock.gif" class="iconsmall" '.
++            ' alt="'.$str->lock.'" /></a>'.$unlock;
++    }
++	unset($table_lock);
++	unset($table_time_track);
++//----------------------------------author@Manish Kumar Tamta - 23 Aug 2010------------------------------------------			
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++		$deleteicon = '<a class="editing_delete" title="'.$str->delete.'" href="'.$path.'/mod.php?delete='.$mod->id.
++            '&amp;sesskey='.$sesskey.$section.'"><img'.
++            ' src="'.$CFG->pixpath.'/t/delete.gif" class="iconsmall" '.
++            ' alt="'.$str->delete.'" /></a>';		
+ 
++//----------------------------------author@Jalpa M Bhavsar - 20th Oct 2010 ------------------------------------------			
++	
+     return '<span class="commands">'."\n".$leftright.$move.
+            '<a class="editing_update" title="'.$str->update.'" href="'.$path.'/mod.php?update='.$mod->id.
+            '&amp;sesskey='.$sesskey.$section.'"><img'.
+            ' src="'.$CFG->pixpath.'/t/edit.gif" class="iconsmall" '.
+            ' alt="'.$str->update.'" /></a>'."\n".
+-           '<a class="editing_delete" title="'.$str->delete.'" href="'.$path.'/mod.php?delete='.$mod->id.
+-           '&amp;sesskey='.$sesskey.$section.'"><img'.
+-           ' src="'.$CFG->pixpath.'/t/delete.gif" class="iconsmall" '.
+-           ' alt="'.$str->delete.'" /></a>'."\n".$hideshow.$groupmode."\n".'</span>';
++           $lockicon."\n".$deleteicon."\n".$hideshow.$groupmode."\n".'</span>';
++//---------------------------------edited@Vishal - 17th March 2010-----------------------------------------------          
+ }
+ 
+ /**
+diff -Naur moodle1.9.9/course/lock_move_delete.html moodle1.9.9A/course/lock_move_delete.html
+--- moodle1.9.9/course/lock_move_delete.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/lock_move_delete.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,12 @@
++<form id="form" method="get" action="<?php echo "$CFG->wwwroot/course/lock.php" ?>">
++
++<input type="hidden" name="mode"         value="lock_unlock_move" />
++<input type="hidden" name="action"       value="unlock" />
++<input type="hidden" name="type"         value="move" />
++
++<input type="hidden" name="id"      value="<?php echo $id; ?>" />
++
++<input type="submit" name="submit" value=" <?php print_string("yes")?> " />
++<input type="button" value=" <?php print_string("no")?> " onclick="javascript:history.go(-2);" />
++
++</form>
+diff -Naur moodle1.9.9/course/lock.php moodle1.9.9A/course/lock.php
+--- moodle1.9.9/course/lock.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/lock.php	2011-03-15 14:15:22.000000000 +0530
+@@ -0,0 +1,390 @@
++<?PHP
++/*	File is initially coded by Activity Locking coders and Now changed by CDAC team
++ *  lock.php -  maintains the locks for scorm and quiz activity currently further can be changed to support other activities
++ *  Following are some features available as GUI in lock.php
++ *  	1. can lock activity for 3 criteria : (time spent, Access, grade)
++ *  	2. can redirect to edit the activity
++ * */
++require_once("../config.php");
++require_once("lib.php");
++require_once($CFG->libdir.'/locklib.php');
++require_once($CFG->libdir.'/gradelib.php');
++
++$id   = required_param('id', PARAM_INT);          // Course module ID
++
++if (! $course_module_locks = get_record("course_modules", "id", $id)) {
++    error("Module ID was incorrect");
++}
++
++if (! $course = get_record("course", "id", $course_module_locks->course)) {
++    error("Course ID was incorrect");
++}
++
++require_login($course);
++$context = get_context_instance(CONTEXT_COURSE, $course->id);
++require_capability('moodle/course:manageactivities', $context);
++
++$sesskey = sesskey();
++$strlocks = get_string("locks", "lock");
++$strlock = get_string("lock", "lock");
++$stractivitylocks = get_string("activitylocks", "lock");
++
++/// Collect modules data
++get_all_mods($course->id, $mods, $modnames, $modnamesplural, $modnamesused);
++
++/// Print header //cb
++$instance = get_record($mods[$id]->modname, "id", $mods[$id]->instance);
++$navigation = build_navigation($instance->name.' '.$strlocks);
++print_header($course->shortname.': '.$strlocks, $course->fullname, $navigation);
++
++if (isset($_GET['action'])) { //Write the lock data to the database
++    if ($_GET['action'] == "lock") {
++
++        //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++        print_heading(get_string('locktodb','lock'));
++        //----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++
++        $passmarks = data_submitted();
++
++        $tracking->visiblewhenlocked = $passmarks->visiblewhenlocked;
++        $tracking->checkboxesforprereqs = $passmarks->checkboxesforprereqs;
++
++        //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++        //description: added for Activity locking with time tracking.
++        //min time & max time will get from activities (which will store in course_module_time_tracking) at the time of the
++        //creating adding or updating activity.
++        /* step 1: check if( forparticular(courseid, moduleid and instance) the course_module_time_track entry is there )
++		 *         then set mintime if(isset(mintime), set grade if(isset(grade))
++		 * step 2: in entry is not there then populate from course_module
++		 * step 3: populate lock table
++        */
++        //unset($passmarks->visiblewhenlocked);
++        //unset($passmarks->checkboxesforprereqs);
++
++        //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++        write_locks_to_db($passmarks, $tracking, $id,$COURSE->id);
++        //----------------------------------author@Manish Kumar Tamta   24 August 2010------------------------------------------
++
++        redirect("$CFG->wwwroot/course/view.php?id=$course->id");
++    }
++    if ($_GET['action'] == "unlock") {
++        $type = $_GET['type'];
++        if($type == "") {
++            error("Sorry, There is some problem.");
++        }else {
++            //type="move"
++            if(!$_GET['submit'] == "submit") {
++                if($type == 'move') {
++                    print_simple_box_start('center', '60%', '#FFAAAA', 20, 'noticebox');
++                    print_heading(get_string("move_delete",'lock'));
++                    include_once('lock_move_delete.html');
++                    print_simple_box_end();
++                    print_footer($course);
++                    exit;
++                }
++                else if($type == "unlock") {
++                    print_simple_box_start('center', '60%', '#FFAAAA', 20, 'noticebox');
++                    print_heading(get_string("unlock_delete",'lock'));
++                    include_once('lock_unlock_delete.html');
++                    print_simple_box_end();
++                    print_footer($course);
++                    exit();
++                }
++            }
++            if($type == "unlock" || $type == "move") {
++                print_heading(get_string('unlocktodb','lock'));
++                unlock($id, $type);
++
++                /*delete_records("course_module_locks", "moduleid", $id);
++		 delete_records("course_module_locks", "lockid", $id);
++
++                */
++                //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------
++                //	description: at the time of the unlock
++                /* step 1: delete_records("course_module_time_tracking","moduleid",$id,"courseid",$cid,"instance",$instance); */
++                //delete_records("course_module_time_tracking", "courseid", $COURSE->id, "moduleid",$id, "instance",$mods[$id]->instance);
++                //----------------------------------author@Manish Kumar Tamta   24 August 2010----------------------------------------
++            }
++            redirect("$CFG->wwwroot/course/view.php?id=$course->id");
++        }
++    }
++
++
++
++
++} else {
++
++
++    //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++
++    print_heading_with_help("$strlocks for $instance->name",'al/lockingprerequisite');   // added above with help button
++
++
++    //----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++
++
++
++    if ($locks = get_records("course_module_locks", "moduleid", $id)) {
++        foreach ($locks as $lock) {
++            $passmark[$lock->lockid] = $lock->requirement;
++        }
++    }
++
++    $path = $CFG->wwwroot.'/course';
++
++
++    //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++    // $meetmodules - boolean variable to track the prerequistic
++    $meetmodules = $flag = false;
++    //----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++
++    /// Search through all the modules, pulling out grade data
++    $sections = get_all_sections($course->id); // Sort everything the same as the course
++    for ($i=0; $i<=$course->numsections; $i++) {
++
++        if (isset($sections[$i])) {   // should always be true
++            $section = $sections[$i];
++            if ($section->sequence) {
++                switch ($course->format) {
++                    case "topics":
++                        $sectionlabel = get_string("topic");
++                        break;
++                    case "weeks":
++                        $sectionlabel = get_string("week");
++                        break;
++                    default:
++                        $sectionlabel = get_string("section");
++                }
++
++                $sectionmods = explode(",", $section->sequence);
++
++
++
++                //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++                $seclabel=false;
++
++                foreach($sectionmods as $modsec) {
++
++                    $reqmod = $mods[$modsec];
++                    if( ! strcasecmp($reqmod->id,$id)==0) {
++
++                        if(strcasecmp($reqmod->modname,'quiz')==0 || strcasecmp($reqmod->modname,'scorm')==0) {
++
++                            $seclabel=true;
++                            break ;
++                        }
++
++                    }else {
++                        //checking for prerequisit activities
++                        $meetmodules = true;
++                        break;
++                    }
++
++                }
++
++                if($meetmodules) {
++                    break;
++                }
++                //----------------------------------author@Manish Kumar Tamta - 6 Sept 2010------------------------------------------
++
++                //printing the sections
++                if( $seclabel) {
++                    if(!$flag) {
++                        $flag = true;
++                        print_simple_box_start('center', '', '', 0, 'generalbox', '');
++                        echo "<center><h2>".get_string("activitylocks", "lock")."</center></h2>";
++                        echo "<form action=\"lock.php?id=$id&sesskey=$USER->sesskey&action=lock\" method=\"post\">";
++                        echo "<table border=\"0\" cellpadding=\"5\" cellspacing=\"5\" align=\"center\">";
++                    }
++                    echo '<tr><td colspan="3">'.$sectionlabel.' '.$section->section.'</td></tr>';
++
++                    //Start of for each -- section
++                    foreach ($sectionmods as $sectionmod) {
++
++                        $mod = $mods[$sectionmod];
++                        $mod->courseid = $course->id;
++                        $instance = get_record("$mod->modname", "id", "$mod->instance");
++                        //$instance holds all the modules information with sections
++                        //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added and modify-------------------------------------
++                        if(!strcasecmp($mod->id,$id)==0) {
++                            $temp = get_record("course_module_locks","moduleid",$id,"lockid",$mod->id);
++
++                            /// checks whether the module selected is SCORM and its module number is matching or not
++                            if(strcasecmp($mod->modname,'scorm')==0 ) {
++                                $image ="<tr><td><A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\"".
++                                        "   TITLE=\"$mod->modfullname\">".
++                                        "<IMG BORDER=0 VALIGN=absmiddle SRC=\"../mod/$mod->modname/icon.gif\" ".
++                                        "HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\"></A></td>";
++                                echo "$image ".
++                                        "<td><A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\">".
++                                        "$instance->name</A></td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[0]' value='T' ";
++                                if(isset($temp) && strlen(stripos($temp->requirement,"T")) != 0) {
++                                    echo " checked ";
++                                }
++                                echo " />Time Spent</td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[1]' value='A' ";
++                                if(isset($temp) && strlen(stripos($temp->requirement,"A")) != 0) {
++                                    echo " checked ";
++                                }
++                                echo " />Access</td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[2]' value='G' disabled />Grade</td>";
++                                echo "<td align=\"right\">&nbsp;&nbsp;&nbsp;&nbsp;";
++                                echo   "<a class='editing_update' title='Editing the Activity' href='$path/mod.php?update=$mod->id".
++                                        "&amp;sesskey=$sesskey'><img ".
++                                        " src='$CFG->pixpath/t/edit.gif' class='iconsmall' ".
++                                        " alt='Update Activity' /></a>";
++
++                                echo "</td></tr>";
++                                //	echo "</tr>";
++                                //-------------  printing the min and max time information to end user
++                                $information = get_record("course_module_time_tracking","courseid",$course->id,"moduleid",$mod->id);
++                                if($information) {
++                                    $printme ="<tr><td align=\"left\">&nbsp;</td><td align=\"left\">&nbsp;</td>".
++                                            "<td align=\"left\">&nbsp;</td>";
++                                    $mimax = "";
++                                    if(strcasecmp($information->mintime,"00:00") != 0) {
++                                        $minmax = " <b>Min -</b> " . $information->mintime;
++                                    }
++                                    if(strcasecmp($information->maxtime,"00:00") != 0) {
++                                        $minmax = $minmax ." <b>Max - </b>". $information->maxtime;
++                                    }
++                                    $printme = $printme."<td align=\"left\">$minmax</td>".
++                                            "<td align=\"left\" colspan=5 >&nbsp;</td></tr>";
++                                    echo $printme;
++                                    echo "<tr><td colspan='9' align='left'></td></tr>";
++                                    unset($information);
++                                }
++                                //-------------
++                            }
++
++
++                            /// checks whether the module selected is QUIZ and its module number is matching or not
++                            if(strcasecmp($mod->modname,'quiz')==0) {
++
++
++                                $image ="<tr><td><A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\"".
++                                        "   TITLE=\"$mod->modfullname\">".
++                                        "<IMG BORDER=0 VALIGN=absmiddle SRC=\"../mod/$mod->modname/icon.gif\" ".
++                                        "HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\"></A></td>";
++                                echo "$image ".
++                                        "<td><A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\">".
++                                        "$instance->name</A></td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[0]' value='T' disabled/>Time Spent</td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[1]' value='A' disabled/>Access</td>".
++                                        "<td align=\"left\">&nbsp;</td>".
++                                        "<td align=\"left\"><input type='checkbox' name='$mod->id[2]' value='G' ";
++                                if(isset($temp) && strlen(stripos($temp->requirement,"G")) != 0) {
++                                    echo " checked ";
++                                }
++                                echo " />Grade</td>";
++                                echo "<td align=\"right\">&nbsp;&nbsp;&nbsp;&nbsp;";
++                                echo   "<a class='editing_update' title='Editing the Activity' href='$path/mod.php?update=$mod->id".
++                                        "&amp;sesskey=$sesskey'><img ".
++                                        " src='$CFG->pixpath/t/edit.gif' class='iconsmall' ".
++                                        " alt='Update Activity' /></a>";
++
++                                echo "</td></tr>";
++
++                                //-------------  printing the minimum grade required to pass information
++                                $information = get_record("grade_items","courseid",$course->id,"itemname",$instance->name,"iteminstance",$mod->instance);
++                                if($information) {
++                                    $printme ="<tr><td align=\"left\">&nbsp;</td><td align=\"left\">&nbsp;</td>".
++                                            "<td align=\"left\">&nbsp;</td>";
++                                    $grades = "";
++                                    $value = (int)$information->gradepass;
++                                    if($value > 0) {
++                                        $grades = " <b>Req. - </b>".(int)$information->gradepass.' / '.(int)$information->grademax;
++                                    }
++                                    $printme = $printme."<td align=\"left\" colspan=4 >&nbsp;</td>".
++                                            "<td align=\"left\">$grades</td><td align=\"left\">&nbsp;</td></tr>";
++                                    echo $printme;
++                                    echo "<tr><td colspan='9' align='left'></td></tr>";
++                                    unset($information);
++                                }//--------------
++                            }
++
++                            unset($temp);
++
++                        }else {
++                            //checking for prerequisit activities
++                            $meetmodules = true;
++                            break;
++                        }
++
++                    }
++                }
++                //end of for each -- section
++
++                if($meetmodules) {
++                    break;
++                }
++            }
++        }
++
++    }
++
++    if($flag) {
++
++        $course_module = get_record("course_module_locks","courseid",$COURSE->id,"moduleid",$id);
++        if(empty($course_module)) {
++            $course_module = new object();
++            $course_module->visiblewhenlocked = $course_module->checkboxesforprereqs = 1;
++        }
++        echo "<tr><td colspan=8>&nbsp;</td></tr>";
++        echo "<tr><td colspan=\"8\"><center><h2>";
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++        print_heading_with_help(get_string("locksettings","lock"),'al/lockingsetting');   // added above with help button
++//----------------------------------author@Manish Kumar Tamta - 7 Sept 2010------------------------------------------
++        echo "</h2></center> </td><td>&nbsp;</td></tr>";
++        echo "<tr><td colspan=\"8\"><table border=\"0\" align=\"center\" cellpadding=\"5\" cellspacing=\"5\">";
++        echo "<tr><td>&nbsp;</td><td align=\"right\">".get_string("visiblewhenlocked", "lock").":</td><td>";
++        echo '<select name="visiblewhenlocked" id="menuvisiblewhenlocked">';
++        if($course_module->visiblewhenlocked == 1) {
++            echo '<option selected="selected" value="1">Yes</option>';
++            echo '<option value="0">No</option>';
++        }else {
++            echo '<option value="1">Yes</option>';
++            echo '<option selected="selected" value="0">No</option>';
++
++        }
++        echo "</select>";
++
++        echo "<td align=\"center\">&nbsp;</td></tr>";
++        echo "<tr><td>&nbsp;</td><td align=\"right\">".get_string("checkboxesforprereqs", "lock").":</td><td>";
++        echo '<select name="checkboxesforprereqs" id="menucheckboxesforprereqs">';
++        if($course_module->checkboxesforprereqs == 0 ) {
++            echo '<option value="1">Yes</option>';
++            echo '<option selected="selected" value="0">No</option>';
++        }else {
++            echo '<option value="0">No</option>';
++            echo '<option selected="selected" value="1">Yes</option>';
++        }
++        echo '</select>';
++
++        echo "<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>";
++
++        echo "<tr><td colspan=\"3\" align=\"center\"><input type=\"submit\" value=\"".get_string("saveactivitylocks", "lock")."\">".
++                "<a href='$CFG->wwwroot/course/view.php?id=$course_module_locks->course'><input type=\"submit\" value=\"".get_string("cancelactivitylocks", "lock")."\"></td></tr></table></td></tr>";
++        echo "</table></form>";
++    }else {
++        //print_box(get_string("noprerequisitesactivitytolock","lock"));
++        print_box(get_string("noprerequisitesactivitytolock","lock"), 'generalbox', 'intro');
++        print_continue("$CFG->wwwroot/course/view.php?id=$COURSE->id");
++    }
++    print_simple_box_end();
++    echo "<br/><br/>";
++}
++
++//----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++
++print_footer($course);
++?>
+diff -Naur moodle1.9.9/course/lock_unlock_delete.html moodle1.9.9A/course/lock_unlock_delete.html
+--- moodle1.9.9/course/lock_unlock_delete.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/lock_unlock_delete.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,12 @@
++<form id="form" method="get" action="<?php echo "$CFG->wwwroot/course/lock.php" ?>">
++
++<input type="hidden" name="mode"         value="lock_unlock_move" />
++<input type="hidden" name="action"       value="unlock" />
++<input type="hidden" name="type"         value="unlock" />
++
++<input type="hidden" name="id"      value="<?php echo $id; ?>" />
++
++<input type="submit" name="submit" value=" <?php print_string("yes")?> " />
++<input type="button" value=" <?php print_string("no")?> " onclick="javascript:history.go(-2);" />
++
++</form>
+diff -Naur moodle1.9.9/course/modedit.php moodle1.9.9A/course/modedit.php
+--- moodle1.9.9/course/modedit.php	2008-07-22 05:48:50.000000000 +0530
++++ moodle1.9.9A/course/modedit.php	2011-03-16 14:42:32.000000000 +0530
+@@ -117,6 +117,26 @@
+         $form->return           = $return;
+         $form->update           = $update;
+ 
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++	// Changes required for minvalue and maxvalue coming from the DB
++	//$minvalue          = "01:00";  == used to set the value coming from course_module_time_tracking table as mintime
++	//$maxvalue          = "01:50";  == used to set the value coming from course_module_time_tracking table as maxtime
++	// if checks whether the record already exists in a table or not and if present than set that as default value to the END USER
++	if($tracking_values = get_record("course_module_time_tracking","courseid",$course->id,"moduleid",$cm->id)){
++		$minvalue = $tracking_values->mintime;
++		$maxvalue = $tracking_values->maxtime;
++		// changing format hh:mm into the mille second
++		list( $mindelayhour, $mindelaymin) = explode(":", $minvalue);
++		$mindelay = ($mindelaymin*60) + ($mindelayhour*60*60);
++		list( $maxdelayhour, $maxdelaymin) = explode(":", $maxvalue);
++		$maxdelay = ($maxdelaymin*60) + ($maxdelayhour*60*60);
++                
++		// passing the value to the form mintime and maxtime so that it will get updated to the form while updating the record.
++		$form->mintime          = $mindelay ;
++		$form->maxtime          = $maxdelay;
++	}
++	//----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
++	
+         if ($items = grade_item::fetch_all(array('itemtype'=>'mod', 'itemmodule'=>$form->modulename,
+                                            'iteminstance'=>$form->instance, 'courseid'=>$COURSE->id))) {
+             // add existing outcomes
+@@ -253,7 +273,30 @@
+             if (is_string($returnfromfunc)) {
+                 error($returnfromfunc, "view.php?id=$course->id");
+             }
+-
++            
++			//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++		// Changes required for minvalue and maxvalue coming from the DB
++		//$minvalue          = "01:00";  == used to set the value coming from course_module_time_tracking table as mintime
++		//$maxvalue          = "01:50";  == used to set the value coming from course_module_time_tracking table as maxtime
++		// if checks whether the record already exists in a table or not and if present than set that as default value to the END USER
++		$tracking_object = array();
++		$passmarks = array();
++
++		$tracking_object['instance'] = $fromform->instance;
++			
++		if(strcasecmp($fromform->mintime,"off:off") == 0){ $tracking_object['mintime'] = "00:00";}else{ $tracking_object['mintime'] = $fromform->mintime;}
++		if(strcasecmp($fromform->maxtime,"off:off") == 0){ $tracking_object['maxtime'] = "00:00";}else{ $tracking_object['maxtime'] = $fromform->maxtime;}
++
++		//$tracking_object['mintime'] = $fromform->mintime;
++		//$tracking_object['maxtime'] = $fromform->maxtime;
++
++		$passmarks[$fromform->coursemodule] = $tracking_object;
++                             
++		insert_CourseModuleTimeTrackingactivity_lock2($passmarks,$fromform->course);
++		unset($passmarks);
++		
++		//----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
++		//---------------------------------edited@vishal - 16th Mar 2011------------------------
+             set_coursemodule_visible($fromform->coursemodule, $fromform->visible);
+             set_coursemodule_groupmode($fromform->coursemodule, $fromform->groupmode);
+             set_coursemodule_groupingid($fromform->coursemodule, $fromform->groupingid);
+@@ -312,6 +355,27 @@
+                 // set cm idnumber
+                 set_coursemodule_idnumber($fromform->coursemodule, $fromform->cmidnumber);
+             }
++            
++            //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++		// Changes required for minvalue and maxvalue coming from the DB
++		//$minvalue          = "01:00";  == used to set the value coming from course_module_time_tracking table as mintime
++		//$maxvalue          = "01:50";  == used to set the value coming from course_module_time_tracking table as maxtime
++		// if checks whether the record already exists in a table or not and if present than set that as default value to the END USER
++		$tracking_object = array();
++		$passmarks = array();
++
++		$tracking_object['instance'] = $fromform->instance;
++			
++		if(strcasecmp($fromform->mintime,"off:off") == 0){ $fromform->mintime = "00:00";}
++		if(strcasecmp($fromform->maxtime,"off:off") == 0){ $fromform->maxtime = "00:00";}
++
++		$tracking_object['mintime'] = $fromform->mintime;
++		$tracking_object['maxtime'] = $fromform->maxtime;
++
++		$passmarks[$fromform->coursemodule] = $tracking_object;
++		insert_CourseModuleTimeTrackingactivity_lock2($passmarks,$fromform->course);
++		unset($passmarks);
++		//----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
+ 
+             add_to_log($course->id, "course", "add mod",
+                        "../mod/$fromform->modulename/view.php?id=$fromform->coursemodule",
+diff -Naur moodle1.9.9/course/mod.php moodle1.9.9A/course/mod.php
+--- moodle1.9.9/course/mod.php	2009-02-06 04:36:19.000000000 +0530
++++ moodle1.9.9A/course/mod.php	2011-03-16 15:00:46.000000000 +0530
+@@ -229,6 +229,14 @@
+                 break;
+ 
+             case "delete":
++            
++//----------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), Modified-----------------------------------------
++			// Checks the Capability whether or not Can delete the activity 
++	        if($mod->modulename == "scorm"){ 
++				require_capability('mod/scorm:deletescormcap', get_context_instance(CONTEXT_MODULE, $cm->id)); 
++			}
++//----------------------------------author@Jalpa M Bhavsar - 19th Oct, 2010 -------------------------------------------------------------------
++
+                 if ($cm and $cw = get_record("course_sections", "id", $cm->section)) {
+                     $sectionreturn = $cw->section;
+                 }
+@@ -244,7 +252,21 @@
+                 }
+ 
+                 unset($SESSION->returnpage);
+-
++                
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++            /*description what we are doing here
++             * if a module deleted then deleted record from module_locks
++             * deletion of entry "course_module_time_tracking" is require whenever we delete a module
++             * so that "course_module_time_tracking" can syncronized with course_modules table while deletion
++             * 
++             */
++              require_once($CFG->libdir.'/locklib.php');
++
++             courseOrCategoryDeleted_ESP2(NULL,$cm->id);
++
++            //----------------------------------author@Manish Kumar Tamta------------------------------------------
++            
++            
+                 add_to_log($course->id, "course", "delete mod",
+                            "view.php?id=$mod->course",
+                            "$mod->modulename $mod->instance", $mod->coursemodule);
+diff -Naur moodle1.9.9/course/moodleform_mod.php moodle1.9.9A/course/moodleform_mod.php
+--- moodle1.9.9/course/moodleform_mod.php	2010-05-14 05:33:35.000000000 +0530
++++ moodle1.9.9A/course/moodleform_mod.php	2011-03-16 14:52:20.000000000 +0530
+@@ -154,7 +154,37 @@
+                 $errors['cmidnumber'] = get_string('idnumbertaken');
+             }
+         }
+-
++        
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++        if($mform->elementExists('mintime') && $mform->elementExists('maxtime')){
++	        $minvalue = $data['mintime'];
++	        $maxvalue = $data['maxtime'];
++	        
++	        if(strcasecmp($minvalue,"0:0") == 0){
++	        		$errors['mintime'] = get_string('checktime','lock');
++	        }else{
++        		if(strcasecmp($maxvalue,"0:0") == 0){
++	        		$errors['maxtime'] = get_string('checktime','lock');
++	        	}else{
++	        		if(strcasecmp($minvalue,"off:off") == 0 || strcasecmp($maxvalue,"off:off") == 0){}
++	        		else{
++	        			list( $mindelayhour, $mindelaymin) = explode(":", $minvalue);
++						$mindelay = ($mindelaymin*60) + ($mindelayhour*60*60);
++						list( $maxdelayhour, $maxdelaymin) = explode(":", $maxvalue);
++						$maxdelay = ($maxdelaymin*60) + ($maxdelayhour*60*60);
++						
++			        	if($mindelay > $maxdelay){
++		        			$errors['maxtime'] = get_string('minmaxtimeerror','lock');
++		        		}
++					    if($mindelay == $maxdelay){
++					       	$errors['maxtime'] = get_string('sametimeerror','lock');
++					    }       				        			
++	        		}
++	       		}
++	        }
++        }
++//----------------------------------author@Jalpa - 25 Aug 2010------------------------------------------        
++//---------------------------------edited@vishal - 16th March 2011        
+         return $errors;
+     }
+ 
+@@ -222,6 +252,20 @@
+             $this->_features->idnumber = true;
+         }
+ 
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++// prerequisite variables is $CFG->pagepath which means user last selected path while navigation.
++// function strripos() is to check whether the activity here is scorm or not.
++// addElement("time_selector") == time_selector is created by CDAC team under /moodle/lib/form/timeselector.php 
++// and is register under /moodle/lib/formslib.php file at last line. 
++		if(strripos($CFG->pagepath,"scorm")){
++        	$mform->addElement("header","timespent",get_string('activitytimespentheader','lock'));
++        	$mform->addElement("time_selector","mintime",get_string('mintimesetting', 'lock') ,array('optional'=>true,'step'=>1));
++        	$mform->setHelpButton('mintime', array('al/timesetting',get_string('timesetting', 'lock')));
++        	$mform->addElement("time_selector","maxtime",get_string('maxtimesetting', 'lock') ,array('optional'=>true,'step'=>1));
++        	$mform->setHelpButton('maxtime', array('al/timesetting', get_string('timesetting', 'lock')));
++		}
++//----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
++
+         $outcomesused = false;
+         if (!empty($CFG->enableoutcomes) and $this->_features->outcomes) {
+             if ($outcomes = grade_outcome::fetch_all_available($COURSE->id)) {
+diff -Naur moodle1.9.9/course/report/activity_lock_report/index.php moodle1.9.9A/course/report/activity_lock_report/index.php
+--- moodle1.9.9/course/report/activity_lock_report/index.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/report/activity_lock_report/index.php	2011-03-15 14:20:34.000000000 +0530
+@@ -0,0 +1,28 @@
++<?php
++//--------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------------
++require_once('../../../config.php');
++require_once('lib.php');
++require_once("$CFG->libdir/excellib.class.php");
++require_once($CFG->libdir.'/tablelib.php');
++require_once('report.php');
++//TODO User prefrences for page size
++$id = required_param('id',PARAM_INT); 
++$user = optional_param('user',0,PARAM_INT);
++$download = optional_param('download',NULL);
++//To test paging
++$page = optional_param('page');
++$tsort = optional_param('tsort');
++$perpage = optional_param('perpage',30.0,PARAM_INT);
++//To test paging
++
++if(!$course = get_record('course','id',$id))
++{
++	error('That\'s an invalid course!');
++}
++require_login($course);
++$report = new scorm_quiz_report();
++if (!$report->display($course,$user,$page,$perpage)) {             // Run the report!
++        error("Error occurred during pre-processing!");
++    }
++//------------------------author@Mayank Madhav-----------------------------------
++?>                        
+diff -Naur moodle1.9.9/course/report/activity_lock_report/lib.php moodle1.9.9A/course/report/activity_lock_report/lib.php
+--- moodle1.9.9/course/report/activity_lock_report/lib.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/report/activity_lock_report/lib.php	2011-03-15 14:21:22.000000000 +0530
+@@ -0,0 +1,342 @@
++<?php
++//------------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-----------------------
++//Functions to print tables of report and to query for report 
++require_once('../../../config.php');
++require_once('../../../lib/locklib.php');
++
++/*
++ * Get all collected data of a user to be filled in the table
++ */
++function get_user_report_ESP2($courseid,$userid)
++{
++ //get all scorm moduleids for this course 
++ //$strscorm = 'scorm';
++ //$strquiz = 'quiz';
++ $scorms = array();
++ $quizes = array();
++ $scorms = get_course_scorms_ESP2($courseid,$userid);
++ $quizes = get_course_quizes_ESP2($courseid,$userid);
++ 
++ //records array stores the final records to be displayed in table  
++ $records = array();
++ 
++ foreach($scorms as $scorm)
++ {
++ 	$scormrecord =new stdclass();
++ 	$scormrecord->name = $scorm->name;
++        $scormrecord->link = $scorm->image.$scorm->link;
++ 	//echo "********scorm name****** ".$scormrecord->name;
++    $time_info = $scorm->time_info;
++   
++    $scormrecord->mintime = sec2hms($time_info->mintime);
++   
++ //	$record->maxtime = $timeinfo->maxtime;
++  //  if($time_info->usertime > 0)
++   // {
++ 	 $scormrecord->timespent = sec2hms($time_info->usertime);
++  //  }
++   // else 
++   // {
++   //  $scormrecord->timespent = "00:00";	
++   // }
++    $scormrecord->complete = $scorm->complete;
++ 	$scormrecord->grade = "N.A.";
++ 	$records[] = $scormrecord;
++ }
++foreach($quizes as $quiz)
++ {
++ 	$quizrecord = new stdclass();
++ 	$quizrecord->name = $quiz->name;
++        $quizrecord->link = $quiz->image.$quiz->link;
++ 	$quizrecord->mintime = "N.A.";
++ //	$record->maxtime = $timeinfo->maxtime;
++ 	$quizrecord->timespent = "N.A.";
++ 	$quizrecord->complete = "N.A.";
++ 	$quizrecord->grade = $quiz->grade; //todo get grades
++ 	$records[] = $quizrecord;
++ }
++ 	if(isset($records))
++ 	{
++ 		 return $records;
++ 	}
++ 	else 
++ 	{return false;}
++}
++
++/*
++ * Gives value of scorm minimum time,maximum time,actual time spent by user
++ */
++function get_scorm_time_info_ESP2($cm,$userid)
++{
++  $time_info = new stdclass();
++
++  if($timetrack = get_CourseModuleTimeTrackingactivity_lock2($cm->course,$cm->id))
++  { //
++   //required time
++   list($delayhour, $delayminute) = explode(":", $timetrack->mintime);
++
++   $reqmintime = ($delayminute*60) + ($delayhour*60*60);
++
++   //for scorm user spent time
++   $scoes = get_records_select('scorm_scoes',"scorm='$cm->instance' ORDER BY id");
++   foreach ($scoes as $sco) 
++   {
++      if ($sco->launch!='') 
++      {  
++      	 $attempt = scorm_get_last_attempt($sco->scorm,$userid);
++         $track=scorm_get_tracks($sco->id,$userid,$attempt);
++         list($uspendhour, $uspendminute,$uspendsec) = explode(":", $track->total_time);
++         $userspendtime=$uspendhour*60*60 + $uspendminute*60+$uspendsec;
++
++         $time_info->mintime= $reqmintime;
++         $time_info->maxtime=  $timetrack->maxtime;
++         $time_info->usertime= $userspendtime;
++         if( $userspendtime > $reqmintime) 
++         {
++           $time_info->status ="open";
++         }
++         else 
++         {
++           $time_info->status = "closed";
++         } 
++      }
++    }
++  }
++  if(isset($time_info))
++  {return $time_info;}
++  else
++  {return false;}
++  
++}
++
++/*
++ * Gives information whether the scorm lesson has been totally completed
++ */
++function get_scorm_completion_info_ESP2($cm,$userid)
++{	
++  $complete_info = false;
++  $scoes = get_records_select('scorm_scoes',"scorm='$cm->instance' ORDER BY id");
++  foreach ($scoes as $sco) 
++  {
++   if ($sco->launch!='') 
++   {
++    $attempt = scorm_get_last_attempt($sco->scorm,$userid);
++    $track=scorm_get_tracks($sco->id,$userid,$attempt);
++    
++    if( $track->status == 'completed' || $track->status== 'passed' || $track->status == 'failed' )
++     {
++        $complete_info= "Completed";
++     }
++     else
++     {
++        $complete_info= "Not Completed";
++     }
++   }
++  }
++	if(isset($complete_info))
++	{
++		return $complete_info;
++	}
++	else
++	{
++		return "Not Completed";
++	}
++}
++/*
++ * Get all enrolled users of the course
++ */
++function get_course_users_ESP2($courseid,$sort='firstname')
++{
++        global $CFG;
++        $context = get_context_instance(CONTEXT_COURSE,$courseid);
++        /*
++         * 
++         $role_assignments = get_records('role_assignments','contextid',$context->id);
++        $users = array();
++        foreach($role_assignments as $role_assignment)
++        {
++        	if($user = get_record('user','id',$role_assignment->userid))
++        	{
++        		$users[]= $user;
++        	}
++        }*/
++        $userssql = "SELECT u.id AS id,u.firstname AS firstname,u.username AS username,u.department AS department,u.city AS city,ra.userid,ra.contextid FROM {$CFG->prefix}user u,{$CFG->prefix}role_assignments ra WHERE ra.contextid={$context->id} and u.id=ra.userid ORDER BY {$sort}";
++        
++        $userrecords = get_records_sql($userssql);
++        if(sizeof($userrecords)>0)
++        return $userrecords;
++        else
++        return false;
++    }
++
++
++ 
++ function get_quiz_grade_ESP2($courseid,$moduleinstance,$userid)
++ {
++ 	$grade_item = grade_get_grades($courseid,'mod','quiz',$moduleinstance,$userid);
++ 	$item = reset($grade_item->items);
++ 	$usergrade = 0.0; 
++    if(isset($item->grades[$userid]->grade)) 
++    {
++      $usergrade=$item->grades[$userid]->grade;
++    }
++    return number_format($usergrade,2);
++ }
++ 
++ function get_course_scorms_ESP2($courseid,$userid)
++ {
++ //get all scorm moduleids for this course
++    global $CFG;
++ $strscorm = 'scorm';
++ //$strquiz = 'quiz';
++ $scorms = array();
++ //$quizes = array();
++ $scormmoduleid = get_field('modules','id','name',$strscorm);
++ //$quizmoduleid = get_field('modules','id','name',$strquiz);
++
++ // storing all scorm module ids and 
++ //quizmodule ids in array in order of its occurence in course sections
++ $coursesections = get_all_sections($courseid);
++ foreach($coursesections as $section)
++ {
++ 	//echo "Section ".$section->section."\n" ;
++ 	//section must be visible
++ 	//if($section->visible)
++ 	//{
++ 	  //explode sequence to give module ids in that section
++ 	 if($section->sequence != null)
++ 	 {
++ 	  $sectionmodules = explode(",",$section->sequence);
++ 	  //check each module id if this is scorm or quiz 
++ 	 
++ 	  foreach($sectionmodules as $sectionmoduleid)
++ 	  {
++ 	  //	echo "Module id ".$sectionmoduleid." ";
++ 		$cm = get_record('course_modules','id',$sectionmoduleid);
++ 		
++ 		//if($cm->visible)
++ 		//{
++ 			if($cm->module == $scormmoduleid)
++ 			{
++ 				//is a scorm 
++ 				$scorm = new stdclass();
++ 				$scorm->id = $cm->id;
++ 				$scorm->name = get_field('scorm','name','id',$cm->instance);
++                                $scorm->image = "<A HREF='{$CFG->wwwroot}/mod/scorm/view.php?id={$cm->id}'>".
++       					"<IMG BORDER=0 VALIGN=absmiddle SRC='{$CFG->wwwroot}/mod/scorm/icon.gif' HEIGHT=16 WIDTH=16 ></A>";
++
++                                $scorm->link ="<A HREF='{$CFG->wwwroot}/mod/scorm/view.php?id={$cm->id}'>{$scorm->name}</A>"; 
++ 				$scorm->time_info = get_scorm_time_info_ESP2($cm,$userid);
++ 				$scorm->complete = get_scorm_completion_info_ESP2($cm,$userid);
++ 				$scorms[] = $scorm; 
++ 				
++ 			}
++ 		//}
++ 		
++ 	  } //end of foreach course module
++ 	}// end of if sequence not null
++ 	//} //end of if section visible
++ }	// end of allcoursesections
++ 
++ return $scorms;
++ }
++ 
++ function get_course_quizes_ESP2($courseid,$userid)
++ {
++ //get all scorm moduleids for this course 
++ //$strscorm = 'scorm';
++ global $CFG;
++ $strquiz = 'quiz';
++ //$scorms = array();
++ $quizes = array();
++ //$scormmoduleid = get_field('modules','id','name',$strscorm);
++ $quizmoduleid = get_field('modules','id','name',$strquiz);
++
++ // storing all scorm module ids and 
++ //quizmodule ids in array in order of its occurence in course sections
++ $coursesections = get_all_sections($courseid);
++ foreach($coursesections as $section)
++ {
++ 	//echo "Section ".$section->section."\n" ;
++ 	//section must be visible
++ 	//if($section->visible)
++ 	//{
++ 	  //explode sequence to give module ids in that section
++ 	 if($section->sequence != null)
++ 	 {
++ 	  $sectionmodules = explode(",",$section->sequence);
++ 	  //check each module id if this is scorm or quiz 
++ 	 
++ 	  foreach($sectionmodules as $sectionmoduleid)
++ 	  {
++ 	  //	echo "Module id ".$sectionmoduleid." ";
++ 		$cm = get_record('course_modules','id',$sectionmoduleid);
++ 		
++ 		//if($cm->visible)
++ 		//{
++ 		    if($cm->module == $quizmoduleid)
++ 			{
++ 				$quiz = new stdclass();
++ 				$quiz->id = $cm->id;
++ 				$quiz->name = get_field('quiz','name','id',$cm->instance);
++                                $quiz->image = "<A HREF='{$CFG->wwwroot}/mod/quiz/view.php?id={$cm->id}'>".
++       					"<IMG BORDER=0 VALIGN=absmiddle SRC='{$CFG->wwwroot}/mod/quiz/icon.gif'".
++						"HEIGHT=16 WIDTH=16></A>";
++                                $quiz->link ="<A HREF='{$CFG->wwwroot}/mod/quiz/view.php?id={$cm->id}'>{$quiz->name}</A>";
++ 				$quiz->grade = get_quiz_grade_ESP2($courseid,$cm->instance,$userid);
++ 				
++ 				$quizes[] = $quiz;
++ 				
++ 			}
++ 		//}
++ 		
++ 	  }
++ 	}
++ 	//} 
++ }
++ 
++ return $quizes;
++ }
++ /*
++  * Finds total number of scorm and quiz modules in course
++  */
++ function get_total_scorm_quiz_ESP2($courseid)
++ {
++   $scorms = get_course_scorms_ESP2($courseid); 	
++   $quizes = get_course_quizes_ESP2($courseid);	
++   $total = sizeof($scorms)+sizeof($quizes);
++   return $total;	
++ }
++ 
++
++ //TODO To be used for filtering later on
++ function print_alphabet_links_ESP2($hook=null)
++ {
++ 	//similar to glossary
++ global $CFG;
++ 
++  $alphabet = explode(",", get_string("alphabet"));
++  $letters_by_line = 14;
++  for ($i = 0; $i < count($alphabet); $i++) 
++  {
++    if ( $hook == $alphabet[$i] and $hook) 
++    {
++      echo "<b>$alphabet[$i]</b>";
++    } else 
++    {
++      echo "<a href=\"$CFG->wwwroot/mod/glossary/view.php?id=$cm->id&amp;mode=$mode&amp;hook=".urlencode($alphabet[$i])."&amp;sortkey=$sortkey&amp;sortorder=$sortorder\">$alphabet[$i]</a>";
++    }
++    if ((int) ($i % $letters_by_line) != 0 or $i == 0) 
++    {
++      echo ' | ';
++    } else 
++    {
++      echo '<br />';
++    }
++  }
++     
++ 	
++ }
++
++//----------------------------------------------author@Mayank Madhav-------------------
++?>
+diff -Naur moodle1.9.9/course/report/activity_lock_report/mod.php moodle1.9.9A/course/report/activity_lock_report/mod.php
+--- moodle1.9.9/course/report/activity_lock_report/mod.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/report/activity_lock_report/mod.php	2011-03-15 14:22:14.000000000 +0530
+@@ -0,0 +1,17 @@
++<?php
++//----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------------
++ if (!defined('MOODLE_INTERNAL')) {
++        die('Direct access to this script is forbidden.');    ///  It must be included from a Moodle page
++    }
++    $all = 0;
++    if (has_capability('moodle/site:viewreports', $context)) {
++       
++    	echo '<p>';
++        
++        $activity_lockreport = "SCORM/Quiz Activity Report";
++        echo "<a href=\"{$CFG->wwwroot}/course/report/activity_lock_report/index.php?id={$course->id}&user={$all}\">";
++        echo "$activity_lockreport</a>\n";
++        echo '</p>';
++    }
++//------------------------------author@Mayank Madhav--------------------------------
++?>
+diff -Naur moodle1.9.9/course/report/activity_lock_report/report.php moodle1.9.9A/course/report/activity_lock_report/report.php
+--- moodle1.9.9/course/report/activity_lock_report/report.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/course/report/activity_lock_report/report.php	2011-03-29 14:18:58.719438000 +0530
+@@ -0,0 +1,382 @@
++<?php
++////----------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added----------------------
++require_once('../../../config.php');
++require_once('lib.php');
++require_once("$CFG->libdir/excellib.class.php");
++require_once($CFG->libdir.'/tablelib.php');
++class scorm_quiz_report {
++
++function display($course,$user,$page,$perpage)
++{
++global $CFG;
++$url = "index.php?id={$course->id}&user={$user}";
++$strsbilactivityreport = "SCORM/Quiz Report";//to be stored and retrieved from get_string()
++$strreports = get_string('reports');
++$download = optional_param('download',NULL);
++if($user == 0)
++ {
++  $navlinks[] = array('name' => $strreports, 'link' => "$CFG->wwwroot/course/report.php?id=$course->id", 'type' => 'misc');
++ }
++ $navlinks[] = array('name' => $strsbilactivityreport, 'link' => "$CFG->wwwroot/course/report.php?id=$course->id", 'type' => 'misc');
++ $navigation = build_navigation($navlinks);
++ $context = get_context_instance(CONTEXT_COURSE,$course->id);//to be used for capability check later
++ 
++ if(!$download)
++ {
++ print_header($course->shortname.': '.$strsbilactivityreport, $course->fullname,$navigation);
++ }
++//Table for all users
++ if ($user == 0)
++{
++  $coursepage = "<a href={$CFG->wwwroot}/course/view.php?id={$course->id}>$course->fullname</a>";	
++  if(!$download)
++  {
++  	
++    print_heading($coursepage. ": All Users");
++  }
++  // Store all values in this and put into a table as per page
++ 
++  $headers = array("Sr.","Firstname","UserID","Department","Location",
++  get_string('scormquizname_column', 'lock'),
++  //get_string('mintimespent_column', 'lock'),
++  // get_string('maxtimespent_column', 'lock'),
++  get_string('timespent_column', 'lock'),
++  get_string('completion_column', 'lock'),
++  get_string('grade_column', 'lock')
++  );  
++  
++  $columns = array('sr','firstname','username','department','city','scormquizname',/*'mintimespent',*/'timespent','completionstatus','grade');
++  //if($table == null){
++  $uniqueid ='scorm-quiz-activity-report';
++if(!$download)
++{
++  $table1 = new flexible_table($uniqueid);
++  $table1->define_columns($columns);
++  $table1->define_headers($headers);
++  
++  $table1->define_baseurl($url);
++  $table1->sortable(true);
++  $table1->pageable(true);
++  $table1->no_sorting('sr');
++  $table1->no_sorting('scormquizname');
++  //$table1->no_sorting('mintimespent');
++  $table1->no_sorting('timespent');
++  $table1->no_sorting('completionstatus');
++  $table1->no_sorting('grade');
++  
++  $table1->set_attribute('width','100%');
++  $table1->set_attribute('id', 'scorm_quiz_report');
++  $table1->set_attribute('class', 'flexible generaltable generalbox');
++  
++   
++} 
++ 
++  
++//If download to Excel write the heading to an excel sheet
++   if($download == 'xls')
++   {
++ 	 $filename = clean_filename("$course->shortname "."_SBILReport"."_All_Users");
++ 	 $downloadname = $filename.'.xls';
++   
++     $workbook1 = new MoodleExcelWorkbook("-");
++    // Sending HTTP headers
++     $workbook1->send($downloadname);
++   // Creating the first worksheet
++    $sheettitle = $course->fullname."_All Users";//replace by get_string
++    $myxls1 =& $workbook1->add_worksheet($sheettitle);
++    // format types
++    $format =& $workbook1->add_format();
++    $format->set_bold(0);
++    $formatbc =& $workbook1->add_format();
++    $formatbc->set_bold(1);
++    $formatbc->set_align('center');
++    
++    //print header in excel sheet
++    $colnum = 0;
++    foreach ($headers as $item) 
++     {
++        $myxls1->write(0,$colnum,$item,$formatbc);
++        $colnum++;
++     }
++   }
++   
++  //Table headers and excel sheet headers created 
++  //Fill all records into temporary array,and fill only required rows to table
++  
++   $tablerecords = array(); 
++  
++  if(!$allusers = get_course_users_ESP2($course->id))
++  { 
++  	notify("There are no users of this course"); 
++  }
++  else
++  { 
++  	//users exist
++  	 $totalscormquizmodules = get_total_scorm_quiz_ESP2($course->id);
++  	 $totalcount = sizeof($allusers)*$totalscormquizmodules;
++  	if(!$download)
++         {
++          $table1->pagesize(30,$totalcount);
++  	  $table1->setup();
++         }
++  	 if(!$download && $sort=$table1->get_sql_sort())
++    {
++    	$allusers = get_course_users_ESP2($course->id,$sort);
++    }
++  
++  	$rownum = 0;
++  	
++    foreach($allusers as $eachuser) 
++    {    
++      $flagfirstrecordforuser = 1;
++      if($recordinfo = get_user_report_ESP2($course->id,$eachuser->id))
++      { 
++      	foreach($recordinfo as $record)
++       {  $row1 = array();
++          $row1[0] = $rownum + 1;
++          if($flagfirstrecordforuser == 1)
++          {
++             $row1[1] = "<a href={$CFG->wwwroot}/user/view.php?id={$eachuser->id}&course={$course->id}>$eachuser->firstname</a>";
++             if($download == 'xls')
++             {
++              $row1[1] = $eachuser->firstname;	
++             }
++          	 $row1[2] = $eachuser->username;
++             $row1[3] = $eachuser->department;
++             $row1[4] = $eachuser->city;
++          }
++            else
++          {
++             $row1[1] = " ";
++             $row1[2] = " ";
++             $row1[3] = " ";
++             $row1[4] = " ";
++           }     
++  	       $row1[5] = $record->name;
++  	       //$row1[5] = $record->mintime;
++  	       $row1[6] = $record->timespent;
++  	       $row1[7] = $record->complete;
++               $row1[8] = $record->grade;
++           ksort($row1);
++           $tablerecords[$rownum] = $row1;//filled with all records
++           //$table->add_data($row1);
++           
++           //Excel will always be created for all records
++           if($download == 'xls')
++           {
++            $colnum = 0;
++            foreach($row1 as $item)
++            {
++             $myxls1->write($rownum+1,$colnum,$item,$format);
++             $colnum++;
++            }
++           }
++           //Excel row written
++           $rownum++;
++           $flagfirstrecordforuser = 0;
++          }
++       }    
++        //$rownum++;
++    }
++  
++  $totalcount = sizeof($tablerecords);
++ 
++  
++  //$table1->pagesize(30,$totalcount);//replace perpage=10 by user preference or standard value
++  //$table1->setup();
++  if(!$download)
++  {
++  	
++  	echo '<table class="generaltable boxaligncenter">';
++  	echo '<th>';print_string("displayingrecords", "", $totalcount);echo '</th>';
++  	echo '<tr><td>';
++  	  
++    if($totalcount>0)
++    {//fill table
++     
++     
++     //print_paging_bar($totalcount, $page, $perpage, "$url&amp;perpage=$perpage&amp;");	
++     for($i=($page*$perpage);$i<($page*$perpage+$perpage);$i++)
++     {
++     	//$table1->data[$i+1] = $tablerecords[$i];
++     	$table1->add_data($tablerecords[$i]); 
++     }
++ 
++     
++    }
++      $table1->print_html();
++     //$table1->width="100%";
++     //print_table($table1);  
++     if($totalcount>0)
++     {
++     // print_paging_bar($totalcount, $page, $perpage, "$url&amp;perpage=$perpage&amp;");	
++     }
++  	echo '</td></tr></table>';
++  
++   
++  } 
++ }
++  //If download to Excel
++  if($download == 'xls' && $workbook1 != null)
++  {
++  	$workbook1->close();
++    exit;
++   }   
++}
++
++
++
++//Reports for particular user
++else
++{
++  if (!$u = get_record('user', 'id', $user) ) 
++  {
++    error('That\'s an invalid user!');
++  }
++  
++  $userinfo = "<a href={$CFG->wwwroot}/user/view.php?id={$user}&course={$course->id}>$u->username</a>";
++  $coursepage = "<a href={$CFG->wwwroot}/course/view.php?id={$course->id}>$course->fullname</a>";
++  if(!$download)
++ {
++   print_heading($coursepage." : ".$userinfo);
++ }	
++   // $reporturl = new moodle_url($url,);
++  	$table2 = new stdclass();
++  	$table2->class = 'generaltable boxaligncenter';
++    $table2->head = array(
++            get_string('scormquizname_column', 'lock'),
++             // get_string('mintimespent_column', 'lock'),
++            // get_string('maxtimespent_column', 'lock'),
++         
++            get_string('timespent_column', 'lock'),
++            get_string('completion_column', 'lock'),
++            get_string('grade_column', 'lock')
++            	);
++
++    $table2->align = array('left', 'left','left','left','left');
++    $table2->size = array('20%','20%','20%','20%','20%');
++    
++    //If download to Excel,printing headings to Excel
++   if($download == 'xls')
++   {
++ 	 $filename = clean_filename("$course->shortname "."_SBILReport"."_".$u->username);
++ 	 $downloadname = $filename.'.xls';
++   
++     $workbook = new MoodleExcelWorkbook("-");
++    // Sending HTTP headers
++     $workbook->send($downloadname);
++   // Creating the first worksheet
++    $sheettitle = "SBIL Report";//replace by get_string
++    $myxls =& $workbook->add_worksheet($sheettitle);
++    // format types
++    $format =& $workbook->add_format();
++    $format->set_bold(0);
++    $formatbc =& $workbook->add_format();
++    $formatbc->set_bold(1);
++    $formatbc->set_align('center');
++   
++    
++    //print header in excel sheet
++    $colnum = 0;
++    foreach ($table2->head as $item) 
++     {
++        $myxls->write(0,$colnum,$item,$formatbc);
++        $colnum++;
++     }
++   }
++    
++    $tablerecords = array(); 
++    if($recordinfo = get_user_report_ESP2($course->id,$u->id))
++    {
++     $rownum = 0;
++     foreach($recordinfo as $record)
++     {
++      $row2 = array();	 //denotes a row,array of column values
++  	 if($download == 'xls')
++         {
++          $row2[0]= $record->name;
++
++
++         }
++         else if(!$download)
++         {
++          $row2[0]= $record->link;
++
++
++
++         }
++  	  //$row2[1]= $record->mintime;
++  	  $row2[1]= $record->timespent;
++  	  $row2[2]= $record->complete;
++      $row2[3]= $record->grade;
++     if(!$download)
++     {
++      ksort($row2);
++      $tablerecords[$rownum] = $row2;
++      //$table->add_data($row2);
++     }
++     //writing contents to excel file
++     if($download == 'xls')
++     {
++       $colnum = 0;
++       foreach($row2 as $item)
++       {
++       $myxls->write($rownum+1,$colnum,$item,$format);
++       $colnum++;
++       }
++      }
++     $rownum++;
++    }	
++  
++   $totalcount = sizeof($tablerecords);
++   //$table->pagesize(10,$totalcount);
++   if(!$download)
++   {
++  	  echo '<table class="generaltable boxaligncenter">';
++  	  echo '<th>';print_string("displayingrecords", "", $totalcount);echo '</th>';
++  	  echo '<tr><td>';
++  	  
++    if($totalcount>0)
++    {//fill table with data
++    	
++     print_paging_bar($totalcount, $page, $perpage, "$url&amp;perpage=$perpage&amp;");	
++     for($i=($page*$perpage);$i<($page*$perpage+$perpage);$i++)
++     {
++     	$table2->data[$i+1] = $tablerecords[$i]; 
++     	//$table->add_data($tablerecords[$i]);
++     	
++     }	
++    }
++     $table2->width="100%";
++     print_table($table2); 
++     //$table->set_attribute('width','100%');
++    // $table->print_html; 
++     if($totalcount>0)
++     {
++      print_paging_bar($totalcount, $page, $perpage, "$url&amp;perpage=$perpage&amp;");	
++     }
++  	echo '</td></tr></table>';
++  } 
++}
++  
++ if($download == 'xls' && $workbook != null)
++  {
++  	 $workbook->close();
++     exit;
++  } 
++ 
++}
++
++
++$options = array();
++$options['id'] = $course->id;
++$options['user'] =$user;
++$options['download'] = "xls";
++print_single_button('index.php',$options,"Download As Excel",'get','_self',false,'Download entire report as excel sheet');
++print_footer($course);
++return true;
++}
++
++}
++/----------------------------author@Mayank Madhav -----13th september 2010-----------
++?>
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/locking.html moodle1.9.9A/lang/en_utf8/help/al/locking.html
+--- moodle1.9.9/lang/en_utf8/help/al/locking.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/locking.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1 @@
++<h2>Activity Locking</h2>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/lockingprerequisite.html moodle1.9.9A/lang/en_utf8/help/al/lockingprerequisite.html
+--- moodle1.9.9/lang/en_utf8/help/al/lockingprerequisite.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/lockingprerequisite.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,17 @@
++<h2>Locking An Activity</h2>
++<p>
++You can lock an activity 'A' by specifying unlocking criteria for one or more prerequisites (P1, P2... etc). For each prerequisite activity 'P' you can specify one or more of the following:
++</p>
++<ol type="1">
++<li><strong>Time:</strong> <p>Activity 'A' will be locked till the user spends Miniumum time required to be spent on Prerequisite "P".</p>
++</li>
++<li><strong>Access:</strong>
++<p>Activity 'A' will be locked till the user completely accesses Prerequisite activity "P".</p>
++</li>
++<li><strong>Grade:</strong>
++<p>Available only for Quiz activity. Activity 'A' will be locked till user obtains grade >= specified pass grade for the specific Quiz activity.</p>
++</li>
++</ol>
++<p>
++One can access Activity 'A' only if he/she fulfills the criteria set for ALL respective prerequisite Activities.
++</p>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/lockingsetting.html moodle1.9.9A/lang/en_utf8/help/al/lockingsetting.html
+--- moodle1.9.9/lang/en_utf8/help/al/lockingsetting.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/lockingsetting.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,23 @@
++<h2>Display Setting for Locked Activity</h2>
++<p>
++Setting specifies whether
++<ul>
++<li>Locked activity should visible to the user or not,</li>
++<li>Prerequisite should be visible to the user or not.</li>
++</ul>
++<strong>Visible when locked:</strong>
++<ol type="1"> 
++<li>"Yes" - Locked activity will be displayed to the user</li>
++<li>"No" - Locked activity will be hidden</li>
++</ol>
++<strong>Show activity prerequisites:</strong>
++<ol type="1"> 
++<li>"Yes" - Prerequisite will be displayed besides the Locked activity. Each prerequisite activity's completion criteria will also be indicated. <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>E.g.</b> [Insert an image of prerequisite displayed]</li><br />
++<li>"No" - Prerequisite activity will not be displayed.</li>
++</ol>
++<p>
++<strong>Note:</strong> that a locked activity and prerequisite will be always visible
++for "admin", "teacher", "course creator", "non-editing teacher" roles,
++irrespective of its display settings.
++</p>
++</p>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/lockssetting.html moodle1.9.9A/lang/en_utf8/help/al/lockssetting.html
+--- moodle1.9.9/lang/en_utf8/help/al/lockssetting.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/lockssetting.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1 @@
++<h2>Settings Locks</h2>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/movinglocks.html moodle1.9.9A/lang/en_utf8/help/al/movinglocks.html
+--- moodle1.9.9/lang/en_utf8/help/al/movinglocks.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/movinglocks.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,16 @@
++<h2>Moving Locked Activity</h2>
++<ol type="1">
++<li><h4>One can "Move" (insert move icon) an activity only if</h4>
++	<ul>
++	<li>The activity is not locked</li>
++	<li>The activity is not prerequisite for any other activity</li>
++	</ul>
++</li>
++<li><h4>So to "Move" an activity</h4>
++	<ul>
++	<li>First unlock (insert unlock icon) the locked activity. By clicking "Unlock" Button, you can unlock all the related prerequisite activity.</li>
++	<li>Also make sure it is not a prerequisite for any locked activity.</li>
++	<li>Now you can move activity at desire position in sequence.</li>
++	</ul>
++</li>		
++</ol>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/timesetting.html moodle1.9.9A/lang/en_utf8/help/al/timesetting.html
+--- moodle1.9.9/lang/en_utf8/help/al/timesetting.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/timesetting.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,20 @@
++<h1>Time Setting</h1>
++<p>
++This setting specifies the minimum time that must be spent on the given SCORM activity and maximum time that can be spent on the given SCORM activity. As of now, this time setting is used ONLY for conditional activity locking (Req 1.1 of activity_lock Phase-II).
++</p>
++<h4>Minimum Time:</h4>
++<p>
++Minimum time specifies the minimum time that can be spent on the given
++SCORM activity. This time is used in conditional activity locking E.g.
++Consider that SCORM Activity X is locked and SCORM Activity Y's "Time
++spent" is set as the condition for unlocking. In this case SCORM
++activity Y can be accessed only if the user has spent time >= "Minimum
++Time" specified for activity X.
++</p>
++<h4>Maximum Time:</h4>
++<p>
++Maximum time specifies the maximum time that can be spent on the
++given SCORM activity. This facility has been included for future use.
++Currently it is displayed in the reports only.
++</p>
++<p><strong>Note:</strong> These settings have been added for the Conditional Activities Requirement (Req 1.1) of SCORM/QUIZ Activity Locking.</p>
+\ No newline at end of file
+diff -Naur moodle1.9.9/lang/en_utf8/help/al/unlocks.html moodle1.9.9A/lang/en_utf8/help/al/unlocks.html
+--- moodle1.9.9/lang/en_utf8/help/al/unlocks.html	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/help/al/unlocks.html	2011-03-11 16:19:30.000000000 +0530
+@@ -0,0 +1,9 @@
++<h2>Unlocked Locked activity</h2>
++<p>
++Unlock all the prerequisites criteria for locked activity.
++</p>
++<b>Note:</b>
++<ul>
++<li>All the locks which have locked current activity </li>
++<li>All the locks which current activity has added to other activity</li>
++</ul>
+diff -Naur moodle1.9.9/lang/en_utf8/lock.php moodle1.9.9A/lang/en_utf8/lock.php
+--- moodle1.9.9/lang/en_utf8/lock.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lang/en_utf8/lock.php	2011-03-15 14:24:10.000000000 +0530
+@@ -0,0 +1,89 @@
++<?php
++$string['activitylocking'] = 'Activity Locking';
++$string['activitylocks'] = 'Specifying Prerequisite Activities';
++$string['activitycomplete'] = 'Activity complete';
++$string['activitycurrentlylocked'] = '<center><font size= 4> <b> This activity is currently locked. You must complete the prerequisites in the table below:</b></font></br>';
++
++$string['afterlockedactivity'] = 'After each locked activity';
++$string['activitynotcomplete'] = 'Activity not complete';
++$string['andhidden'] = 'and hidden';
++$string['beforeeveryactivity'] = 'Before every activity';
++$string['tracking'] = 'Activity Completion';
++$string['checkboxesforprereqs'] = 'Show activity prerequisites';
++$string['completion'] = 'completion';
++$string['locks'] = 'Prerequisites';
++$string['lock'] = 'Prerequisite';
++$string['locksettings'] = 'Lock Settings';
++$string['locked'] = 'locked';
++$string['locking'] = 'locking';
++$string['maxgrade'] = 'Max Grade';
++$string['predecessorcomplete'] = 'Prerequisite complete';
++$string['predecessornotcomplete'] = 'Prerequisite not complete';
++$string['predecessornotcompletetime'] = 'Prerequisite not complete time delay';
++$string['requiredgrade'] = 'Required Grade';
++$string['saveactivitylocks'] = 'Save Activity Locks';
++$string['showactivitytracking'] = 'Show activity locking';
++$string['stylewhencomplete'] = 'CSS style to use when the activity is complete';
++$string['stylewhenlocked'] = 'CSS style to use when the activity is locked';
++$string['timedelay'] = 'Time Delay';
++$string['timedelaylock'] = 'Time Delay Lock';
++$string['timedelayinfo'] = '(The amount of time that a student must be enrolled in the course<br />before they will be able to access this activity.)';
++$string['timedelaynotice'] = 'Amount of time enrolled in course.';
++$string['unlock'] = 'Unlock';
++$string['usermustaccess'] = 'User must access this activity';
++$string['usermustpost'] = 'User must post in this forum';
++$string['usermustanswer'] = 'User must answer this choice';
++$string['visiblewhenlocked'] = 'Visible when locked';
++
++$string['prerequisitenotice']='<b><font size=2>Note:</font></b> <br><strong><font size=2 style=\"background:#AAFFAA\">Green </font> </strong> <font size=2> specifies that activity is complete. </font> <br>
++	<font style=\"background:red \"><strong> <font size=2>Red</font> </strong></font> <font size=2> specifies that activity is incomplete. </font>
++</pre></center>';
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++// strings related to adding time spent GUI to end user
++$string['activitytimespentheader'] = 'Time to be spent';
++$string['mintimesetting'] = 'Set Minimum Time [hh:mm] ';
++$string['maxtimesetting'] = 'Set Maximum Time [hh:mm] ';
++$string['timesetting'] = 'Time Setting ';
++
++// strings related to adding errors while checking max time and min time validation
++$string['sametimeerror'] = "Maximum time and Minimum Time cannot be same. ";
++$string['minmaxtimeerror'] = "Maximum time cannot be less than Minimum time.";
++$string['checktime'] = "Time cannot be set to 00:00";
++
++// strings related to moving activities in the course : used in /moodle/course/activity_lockmoveactivity.php file
++$string['moveingactivity'] = " is locked.'Unlock' to move ";
++$string['activity_column']  = "Activity" ;
++$string['mintimespent_column'] = "Min Time[hh:mm]";
++$string['maxtimespent_column'] = "Max Time[hh:mm]";
++$string['access_column'] = "Access";
++$string['grade_column'] = "Grade";
++$string['title_access'] = "Required to Access the Module";
++$string['mytime'] = "My Time[hh:mm]";
++$string['myaccess'] = "My Access";
++$string['mygrade'] = "My Grade";
++
++$string['lockedbythisactivityunlock'] = "Following activities are prerequisites for - ";
++$string['lockedtothisactivityunlock'] = "The activity has locked - ";
++$string['lockedbythisactivitymove'] = "Following activities are prerequisites for - ";
++$string['lockedtothisactivitymove'] = " is prerequisite for following activities";
++$string['unlockactivitylocks'] = "Unlock Activity";
++$string['locktodb'] = "Locking of modules in progress";
++$string['unlocktodb'] = "Unlocking of modules in progress";
++$string['unlockactivity'] = " is locked.Unlock it.";
++//others
++$string['cancelactivitylocks'] = "Cancel";
++$string['lockedbythisactivity'] = "Prerequisites for -";
++$string['noprerequisitesactivitytolock'] = "<center><pre>NO - Prerequisites Activity to Lock</pre></center>";
++$string['unlock_delete'] = "Are you absolutely sure you want to completely remove locked activity ?";
++$string['move_delete'] = "Are you absolutely sure you want to completely remove locked activity ?";
++//----------------------------------author@Jalpa - 23 Aug 2010------------------------------------------
++
++$string['scormquizname_column'] = "SCORM/Quiz Name";
++$string['timespent_column'] = "Actual Time Spent";
++$string['completion_column'] = "Completion Status";
++//---------------------------------author@Mayank 13 Sep 2010---------------------------------------------
++
++
++?>
+diff -Naur moodle1.9.9/lib/form/timeselector.php moodle1.9.9A/lib/form/timeselector.php
+--- moodle1.9.9/lib/form/timeselector.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lib/form/timeselector.php	2011-03-15 14:36:00.000000000 +0530
+@@ -0,0 +1,252 @@
++<?php
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++global $CFG;
++require_once "$CFG->libdir/form/group.php";
++require_once "$CFG->libdir/formslib.php";
++require_once($CFG->libdir.'/locklib.php');
++/**
++ * Class for a group of elements used to input a date and time.
++ *
++ * Emulates moodle print_date_selector function and also allows you to select a time.
++ *
++ * @author Jamie Pratt <me@jamiep.org>
++ * @access public
++ */
++class MoodleQuickForm_time_selector extends MoodleQuickForm_group{
++    /**
++    * Options for the element
++    *
++    * startyear => integer start of range of years that can be selected
++    * stopyear => integer last year that can be selected
++    * timezone => float/string timezone
++    * applydst => apply users daylight savings adjustment?
++    * step     => step to increment minutes by
++    */
++    var $_options = array( //'startyear'=>1970, 'stopyear'=>2020,
++                    'timezone'=>99, 'applydst'=>true, 'step'=>5, 'optional'=>false);
++
++   /**
++    * These complement separators, they are appended to the resultant HTML
++    * @access   private
++    * @var      array
++    */
++    var $_wrap = array('', '');
++
++   /**
++    * Class constructor
++    *
++    * @access   public
++    * @param    string  Element's name
++    * @param    mixed   Label(s) for an element
++    * @param    array   Options to control the element's display
++    * @param    mixed   Either a typical HTML attribute string or an associative array
++    */
++    function MoodleQuickForm_time_selector($elementName = null, $elementLabel = null, $options = array(), $attributes = null)
++    {
++        $this->HTML_QuickForm_element($elementName, $elementLabel, $attributes);
++        $this->_persistantFreeze = true;
++        $this->_appendName = true;
++        $this->_type = 'time_selector';
++        // set the options, do not bother setting bogus ones
++        if (is_array($options)) {
++            foreach ($options as $name => $value) {
++                if (isset($this->_options[$name])) {
++                    if (is_array($value) && is_array($this->_options[$name])) {
++                        $this->_options[$name] = @array_merge($this->_options[$name], $value);
++                    } else {
++                        $this->_options[$name] = $value;
++                    }
++                }
++            }
++        }
++    }
++
++    // }}}
++    // {{{ _createElements()
++
++    function _createElements()
++    {
++        $this->_elements = array();
++        /*
++        for ($i=1; $i<=31; $i++) {
++            $days[$i] = $i;
++        }
++        for ($i=1; $i<=12; $i++) {
++            $months[$i] = userdate(gmmktime(12,0,0,$i,15,2000), "%B");
++        }
++        for ($i=$this->_options['startyear']; $i<=$this->_options['stopyear']; $i++) {
++            $years[$i] = $i;
++        }
++        */
++        for ($i=0; $i<=23; $i++) {
++            $hours[$i] = sprintf("%02d",$i);
++        }
++        for ($i=0; $i<60; $i+=$this->_options['step']) {
++            $minutes[$i] = sprintf("%02d",$i);
++        }
++        /*
++        $this->_elements[] =& MoodleQuickForm::createElement('select', 'day', get_string('day', 'form'), $days, $this->getAttributes(), true);
++        $this->_elements[] =& MoodleQuickForm::createElement('select', 'month', get_string('month', 'form'), $months, $this->getAttributes(), true);
++        $this->_elements[] =& MoodleQuickForm::createElement('select', 'year', get_string('year', 'form'), $years, $this->getAttributes(), true);
++		*//*
++		if (right_to_left()) {   // Switch order of elements for Right-to-Left
++			$this->_elements[] =& MoodleQuickForm::createElement('select', 'minute', get_string('minute', 'form'), $minutes, $this->getAttributes(), true);
++			$this->_elements[] =& MoodleQuickForm::createElement('select', 'hour', get_string('hour', 'form'), $hours, $this->getAttributes(), true);
++		} else {*/
++			$this->_elements[] =& MoodleQuickForm::createElement('select', 'hour', get_string('hour', 'form'), $hours, $this->getAttributes(), true);
++			$this->_elements[] =& MoodleQuickForm::createElement('select', 'minute', get_string('minute', 'form'), $minutes, $this->getAttributes(), true);
++		//}
++        // If optional we add a checkbox which the user can use to turn if on
++        if($this->_options['optional']) {
++            $this->_elements[] =& MoodleQuickForm::createElement('checkbox', 'off', null, get_string('disable'), $this->getAttributes(), true);
++        }
++        foreach ($this->_elements as $element){
++            if (method_exists($element, 'setHiddenLabel')){
++                $element->setHiddenLabel(true);
++            }
++        }
++
++    }
++
++    // }}}
++    // {{{ onQuickFormEvent()
++
++    /**
++     * Called by HTML_QuickForm whenever form event is made on this element
++     *
++     * @param     string    $event  Name of event
++     * @param     mixed     $arg    event arguments
++     * @param     object    $caller calling object
++     * @since     1.0
++     * @access    public
++     * @return    void
++     */
++    function onQuickFormEvent($event, $arg, &$caller)
++    {
++        switch ($event) {
++            case 'updateValue':
++                // constant values override both default and submitted ones
++                // default values are overriden by submitted
++                $value = $this->_findValue($caller->_constantValues);
++                if (null === $value) {
++                    // if no boxes were checked, then there is no value in the array
++                    // yet we don't want to display default value in this case
++                    if ($caller->isSubmitted()) {
++                        $value = $this->_findValue($caller->_submitValues);
++                    } else {
++                        $value = $this->_findValue($caller->_defaultValues);
++                    }
++                }
++                $requestvalue=$value;
++                if ($value == 0) {
++                    $value = 0;//time(); 
++                    /* here time() used to set default as system time and if we pass 0 to the $value than 
++                     * it will show the default value as 00 */
++                }
++               
++                if (!is_array($value)) {
++
++                    $currenttime = sec2hms($value);
++                    $currentdate = explode(":", $currenttime);
++
++                    // Round minutes to the previous multiple of step.
++                    //$currentdate['minutes'] -= $currentdate['minutes'] % $this->_options['step'];
++                    $value = array(
++                        'minute' => $currentdate[1],
++                        'hour' => $currentdate[0],
++                        //'day' => $currentdate['mday'],
++                        //'month' => $currentdate['mon'],
++                        //'year' => $currentdate['year']
++                    	);
++                    // If optional, default to off, unless a date was provided
++                    if($this->_options['optional']) {
++                        $value['off'] = ($requestvalue == 0) ? true : false;
++                    }
++                } else {
++                    $value['off'] = (isset($value['off'])) ? true : false;
++                }
++                if (null !== $value){
++                    $this->setValue($value);
++                }
++                break;
++            case 'createElement':
++                if($arg[2]['optional']) {
++                    $caller->disabledIf($arg[0], $arg[0].'[off]', 'checked');
++                }
++                return parent::onQuickFormEvent($event, $arg, $caller);
++                break;
++            default:
++                return parent::onQuickFormEvent($event, $arg, $caller);
++        }
++    }
++
++    // }}}
++    // {{{ toHtml()
++
++    function toHtml()
++    {
++        include_once('HTML/QuickForm/Renderer/Default.php');
++        $renderer =& new HTML_QuickForm_Renderer_Default();
++        $renderer->setElementTemplate('{element}');
++        parent::accept($renderer);
++        return $this->_wrap[0] . $renderer->toHtml() . $this->_wrap[1];
++    }
++
++    // }}}
++    // {{{ accept()
++
++    function accept(&$renderer, $required = false, $error = null)
++    {
++        $renderer->renderElement($this, $required, $error);
++    }
++
++    // }}}
++
++    /**
++     * Output a timestamp. Give it the name of the group.
++     *
++     * @param array $submitValues
++     * @param bool $assoc
++     * @return array
++     */
++    function exportValue(&$submitValues, $assoc = false)
++    {
++        $value = null;
++        $valuearray = array();
++        foreach ($this->_elements as $element){
++            $thisexport = $element->exportValue($submitValues[$this->getName()], true);
++            if ($thisexport!=null){
++                $valuearray += $thisexport;
++            }
++        }
++        if (count($valuearray)){
++            if($this->_options['optional']) {
++                // If checkbox is on, the value is zero, so go no further
++                if(!empty($valuearray['off'])) {
++                    $value[$this->getName()]="off:off";
++                    return $value;
++                }
++            }
++            $valuearray=$valuearray + array(/*'year'=>1970, 'month'=>1, 'day'=>1,*/ 'hour'=>0, 'minute'=>0);
++            $value[$this->getName()]=$valuearray['hour'] .":". $valuearray['minute'];
++            						/*make_timestamp(
++                                   //$valuearray['year'],
++                                   //$valuearray['month'],
++                                   //$valuearray['day'],
++                                   $valuearray['hour'],
++                                   $valuearray['minute'],
++                                   0,
++                                   $this->_options['timezone'],
++                                   $this->_options['applydst']);*/
++
++            return $value;
++        } else {
++
++            return null;
++        }
++    }
++}
++    // }}}
++    
++   //----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
++?>
+diff -Naur moodle1.9.9/lib/formslib.php moodle1.9.9A/lib/formslib.php
+--- moodle1.9.9/lib/formslib.php	2010-05-14 05:33:39.000000000 +0530
++++ moodle1.9.9A/lib/formslib.php	2011-03-16 15:06:00.000000000 +0530
+@@ -1929,4 +1929,8 @@
+ MoodleQuickForm::registerElementType('advcheckbox', "$CFG->libdir/form/advcheckbox.php", 'MoodleQuickForm_advcheckbox');
+ MoodleQuickForm::registerElementType('recaptcha', "$CFG->libdir/form/recaptcha.php", 'MoodleQuickForm_recaptcha');
+ MoodleQuickForm::registerElementType('selectwithlink', "$CFG->libdir/form/selectwithlink.php", 'MoodleQuickForm_selectwithlink');
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++MoodleQuickForm::registerElementType('time_selector', "$CFG->libdir/form/timeselector.php", 'MoodleQuickForm_time_selector');
++//----------------------------------author@Jalpa - 24 Aug 2010------------------------------------------
++
+ ?>
+diff -Naur moodle1.9.9/lib/locklib.php moodle1.9.9A/lib/locklib.php
+--- moodle1.9.9/lib/locklib.php	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/lib/locklib.php	2011-03-15 14:34:12.000000000 +0530
+@@ -0,0 +1,1189 @@
++<?php  // $Id: locklib.php
++// Library of useful functions for activity locking
++// Updated 1.9 charbusch
++
++
++require_once($CFG->dirroot.'/course/lib.php');
++require_once($CFG->libdir.'/gradelib.php');
++require_once($CFG->dirroot.'/grade/lib.php');
++require_once($CFG->dirroot.'/grade/querylib.php');
++require_once($CFG->dirroot.'/mod/scorm/locallib.php');
++// Locks activities
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added,-------------------------------------
++/*description: islocked_ESP2($module)
++ * argument $module= course_modules
++ *
++ * returns locked course modules array with status open or closed
++ * format : Array ( [lockid1] => Array ( [A] => Array ( [status] => open/closed [complete] => 1/0 )
++ *                                  [T] => Array ( [mintime] => -- [maxtime] => -- [usertime] => -- [status] => open/closed )
++ *                                  [G] => [overallstatus] => open ) )
++ *                  [lockid2] => Array ( [A] => Array ( [status] => open [complete] => 1 )
++ *                                  [T] => Array ( [mintime] => -- [maxtime] => --  [usertime] => -- [status] => open/closed )
++ *                                  [G] =>Array ( [usergrade] => -- [status] => open/closed )
++ *                  [overallstatus] => open/closed )
++ *                  )
++ *
++ *
++*/
++
++function islocked_ESP2($module) {
++
++    global $USER, $CFG, $COURSE;  //It there an alternative to global $course?
++    static $currentcourse, $mods; // Hopefully this should reduce the number of queries
++    $userid = $USER->id;
++    $courseid = $COURSE->id;
++
++    if (!isset($module)) {   // limit Notice: Trying to get property of non-object in Header
++
++        return false;
++    }
++
++
++    if (!isset($mods) or !($currentcourse == $COURSE->id)) {     // The idea is, you should only need to download a list of modules in a course once
++        $mods = get_course_mods($COURSE->id);
++        $currentcourse = $COURSE->id;
++    }
++    //module locked with a time delay
++
++
++    if ($modlocks = get_records("course_module_locks", "moduleid", $module->id)) { // Module has locks
++
++
++
++        // $overallstatus;
++
++        foreach($modlocks as $modlock) {
++
++            $lockid = $modlock->lockid;
++            if ($lockid != $modlock->moduleid) {
++
++                $instance = get_record($mods[$lockid]->modname, "id", $mods[$lockid]->instance);
++
++
++                //locking criteria can be Access(A), Time spent(T) and passing Grade(G)
++
++
++                //locked on access
++
++
++                //if we get 'A' and 'T' then we will consider min mintime 'T'=min time.
++                //if we get 'T' and 'G' then we will consider both.
++                //if we get 'A','T' and 'G' then we will consider 'T'=1 sec and 'G'=pass grade.
++
++
++                list($a,$b,$c)=explode(",",$modlock->requirement);
++
++
++
++
++
++                if((isset($a) && $a=='T') ||(isset($b) && $b=='T') || (isset($c) && $c=='T')) {
++
++                    $time='T';
++                }
++
++                if((isset($a) && $a=='A') || (isset($b) && $b=='A') || (isset($c) && $c=='A')) {
++
++                    $complete='A';
++                }
++
++                if((isset($a) && $a=='G') || (isset($b) && $b=='G') || (isset($c) && $c=='G')) {
++
++                    $grade='G';
++                }
++
++
++
++
++
++
++                // $time_track_info = array();
++                // $complete_info =array();
++                // $grade_info = array();
++
++                //  $userid='';
++
++                if(isset($complete) && isset($time) && isset($grade)) {
++
++                    $time_track_info=isCompletlyAccessed_ESP2($modlock);
++                    $complete_info=isCompletedMinTime_ESP2($modlock);
++                    $grade_info=isPassedMinGrade_ESP2($modlock);
++
++                    if(($time_track_info["status"] =="open") && ($complete_info["status"] == "open") && ($grade_info["status"] == "open")) {
++
++                        $overallstatus="open";
++
++                    }
++                    else
++                        $overallstatus="closed";
++
++
++                }
++                else if(isset($complete) && isset($time)) {
++
++
++                    $complete_info= isCompletlyAccessed_ESP2($modlock);
++                    $time_track_info=isCompletedMinTime_ESP2($modlock);
++
++
++                    if(($time_track_info["status"] =="open") && ($complete_info["status"] == "open")) {
++
++
++                        $overallstatus="open";
++
++                    }
++                    else
++                        $overallstatus="closed";
++
++                }
++
++                else
++                if(isset($time) && isset($grade)) {
++
++
++                    $time_track_info=isCompletedMinTime_ESP2($modlock);
++                    $grade_info=isPassedMinGrade_ESP2($modlock);
++
++                    if(($time_track_info["status"] =="open") && ($grade_info["status"] == "open")) {
++
++                        $overallstatus="open";
++
++                    }
++                    else
++                        $overallstatus="closed";
++
++
++
++                }
++
++                else
++                if(isset($complete) && isset($grade)) {
++
++
++
++                    $complete_info=isCompletlyAccessed_ESP2($modlock);
++                    $grade_info=isPassedMinGrade_ESP2($modlock);
++
++                    if(($complete_info["status"] == "open") && ($grade_info["status"] == "open")) {
++
++                        $overallstatus="open";
++
++                    }
++                    else
++                        $overallstatus="closed";
++
++
++                }
++
++                else if(isset($complete)) {
++
++
++                    $complete_info= isCompletlyAccessed_ESP2($modlock);
++                    if(($complete_info["status"] == "open") ) {
++
++                        $overallstatus="open";
++
++                    }
++                    else
++                    if(($complete_info["status"] == "closed") )
++                        $overallstatus="closed";
++
++                }
++
++                else if(isset($time)) {
++
++
++                    $time_track_info= isCompletedMinTime_ESP2($modlock);
++
++
++                    if(($time_track_info["status"] =="open")) {
++
++
++
++                        $overallstatus="open";
++
++                    }
++                    else {
++                        if(($time_track_info["status"] =="closed"))
++
++                            $overallstatus="closed";
++
++                    }
++
++
++                }
++
++                else if(isset($grade)) {
++
++
++                    $grade_info=  isPassedMinGrade_ESP2($modlock);
++
++                    if( $grade_info["status"] == "open") {
++
++                        $overallstatus="open";
++
++
++                    }
++                    else if($grade_info["status"] == "closed") {
++                        $overallstatus="closed";
++
++
++                    }
++
++                }
++
++
++
++
++
++
++
++            }
++
++            unset($time);
++            unset($complete);
++            unset( $grade);
++
++            $modulelocked[$modlock->lockid]= array('A'=>$complete_info,'T'=>$time_track_info,'G'=>$grade_info,'overallstatus'=>$overallstatus);
++
++            unset($complete_info);
++            unset($time_track_info);
++            unset($grade_info);
++           
++
++
++        }
++
++
++    }
++
++    unset($overallstatus);
++
++
++
++    if (isset($modulelocked)) {
++
++        return $modulelocked;
++    } else { // No locks on module
++
++
++
++        return false;
++    }
++}
++
++
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++
++function isCompletlyAccessed_ESP2($modlock) {
++
++
++    global $USER;
++
++
++
++    $cm = get_record("course_modules", "id", $modlock->lockid);
++    $modules = get_record("modules","id",$cm->module);
++
++
++
++
++    if($modules->name == 'scorm') {
++
++
++        $scoes = get_records_select('scorm_scoes',"scorm='$cm->instance' ORDER BY id");
++
++        foreach ($scoes as $sco) {
++            if ($sco->launch!='') {
++
++
++                //require_once($CFG->dirroot.'/mod/scorm/locallib.php');
++
++                $attempt = scorm_get_last_attempt($sco->scorm,$USER->id);
++
++
++                $track=scorm_get_tracks($sco->id,$USER->id,$attempt);
++                $complete_info = array();
++                if( $track->status == 'completed' || $track->status== 'passed' || $track->status == 'failed' ) {
++
++                    $complete_info["status"]  = "open";
++                    $complete_info["complete"]  = true;
++                }
++
++                else {
++
++
++
++                    $complete_info["status"]  = "closed";
++                    $complete_info["complete"]  = false;
++                }
++
++
++
++
++            }
++        }
++
++
++    }
++
++
++
++
++
++
++
++
++    if(isset($complete_info)) {
++
++        return $complete_info;
++    }
++
++
++
++    else return false;
++
++
++}
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++//description: checking passing criteria has been completed by user or not
++
++function isPassedMinGrade_ESP2($modlock) {
++
++
++
++    global $USER, $CFG, $COURSE;  //It there an alternative to global $course?
++
++    static $currentcourse, $mods; // Hopefully this should reduce the number of queries
++    $userid = $USER->id;
++    $courseid = $COURSE->id;
++
++    if (!isset($modlock)) {   // limit Notice: Trying to get property of non-object in Header
++
++        return false;
++    }
++
++
++
++
++    if (!isset($mods) or !($currentcourse == $COURSE->id)) {     // The idea is, you should only need to download a list of modules in a course once
++
++
++        $mods = get_course_mods($COURSE->id);
++
++        $currentcourse = $COURSE->id;
++    }
++
++
++
++
++    $cm = get_record("course_modules", "id", $modlock->lockid);
++    $modules = get_record("modules","id",$cm->module);
++
++
++
++
++
++    if($modules->name == 'quiz') { //for squiz
++
++
++        $mods[$modlock->lockid]->courseid = $currentcourse;
++
++
++        $grade_item = grade_get_grades($currentcourse, 'mod', $mods[$modlock->lockid]->modname, $mods[$modlock->lockid]->instance, $USER->id); //cb
++
++
++        $item = reset($grade_item->items);
++
++
++        if(isset($item->grademax)) {
++            $grade_info = array();
++
++            $grade_info["passgrade"]= $item->gradepass;
++            $pass=0.0;
++            if(isset($item->grades[$USER->id]->grade)) {
++                $pass=$item->grades[$USER->id]->grade;
++            }
++            $grade_info["usergrade"]= $pass;
++
++            if ($pass >= $item->gradepass ) {
++                $grade_info["status"]  = "open";
++            } else {
++                $grade_info["status"] = "closed";
++            }
++        }
++
++    }
++
++
++
++
++    if(isset( $grade_info)) {
++
++
++        return  $grade_info;
++    }
++
++
++
++    else return false;
++
++
++
++}
++
++//----------------------------------author@Manish Kumar Tamta      24 August 2010------------------------------------------
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++//description: time tracking checking
++//for scorm how much time user has spend
++
++
++function isCompletedMinTime_ESP2($modlock) {
++
++
++
++    global $USER;
++
++
++
++
++    $time_info = array();
++
++
++
++    if($timetrack = get_CourseModuleTimeTrackingactivity_lock2($modlock->courseid,$modlock->lockid)) { //
++
++        //required time
++        list($delayhour, $delayminute) = explode(":", $timetrack->mintime);
++
++        $reqmintime = ($delayminute*60) + ($delayhour*60*60);
++
++
++
++        $cm = get_record("course_modules", "id", $modlock->lockid);
++        $modules = get_record("modules","id",$cm->module);
++
++        if($modules->name == 'scorm') { //for scorm;
++
++            //
++
++            $scoes = get_records_select('scorm_scoes',"scorm='$cm->instance' ORDER BY id");
++
++
++            foreach ($scoes as $sco) {
++                if ($sco->launch!='') {
++
++                    //require_once($CFG->dirroot.'/mod/scorm/locallib.php');
++
++                    $attempt = scorm_get_last_attempt($sco->scorm,$USER->id);
++
++
++                    $track=scorm_get_tracks($sco->id,$USER->id,$attempt);
++
++
++
++
++                    list($uspendhour, $uspendminute,$uspendsec) = explode(":", $track->total_time);
++
++                    $userspendtime=$uspendhour*60*60 + $uspendminute*60+$uspendsec;
++
++                    $time_info["mintime"]= $reqmintime;
++                    $time_info["maxtime"]=  $timetrack->maxtime;
++                    $time_info["usertime"]= $userspendtime;
++
++
++
++
++
++                    if( $userspendtime > $reqmintime) {
++                        $time_info["status"]  = "open";
++
++                    }
++                    else {
++                        $time_info["status"]  = "closed";
++
++                    }
++
++                }
++
++
++            }//end for each
++
++        }//for scorm end
++
++
++
++
++    }
++
++
++
++
++    if(isset( $time_info)) {
++
++
++        return  $time_info;
++    }
++
++
++
++    else return false;
++
++
++
++}
++
++//----------------------------------author@Manish Kumar Tamta      24 August 2010------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++//not yet used in anywhere
++function activity_complete($mod) {
++    global $USER, $CFG, $course;
++
++    $coursemodlock = get_records("course_module_locks", "lockid", $mod->id, "requirement DESC LIMIT 1");
++    if (is_array($coursemodlock)) {
++        $coursemodlock = current($coursemodlock);
++    }
++
++
++    $instance = get_record($mod->modname, "id", $mod->instance);
++    $mod->courseid = $course->id;
++    if (record_exists("log", "userid", $USER->id, "module", $mod->modname , "info" , $mod->instance)) {
++        $complete  = true;
++    }
++
++    else
++
++    if($coursemodlock->requirement == "G") {
++        if ($grade_items = grade_get_grade_items_for_activity($mod)) {
++            $grade_item = grade_get_grades($course->id, 'mod', $mod->modname, $mod->instance, $USER->id);
++            $item = reset($grade_item->items);
++            if(isset($item->grademax)) {
++
++                $requiredgrade=get_CourseModuleTimeTrackingactivity_lock2($course->id, $mod->id);
++
++                if (is_array($requiredgrade)) {
++                    $requiredgrade = current($requiredgrade);
++                }
++
++
++                if (isset($item->grades[$USER->id]->grade) and $item->grades[$USER->id]->grade >= $requiredgrade->requirement) {
++                    $complete  = true;
++                } else {
++                    $complete = false;
++                }
++            }
++
++        }
++    }
++
++
++    else
++
++
++    if($coursemodlock->requirement == "T") {
++
++
++        if($timetrack=get_CourseModuleTimeTrackingactivity_lock2($course->id,$mod->id)) { //
++
++            //required time
++            list($delayhour, $delayminute) = explode(":", $timetrack->mintime);
++            $reqmintime = 0;
++            $reqmintime = ($delayminute*60) + ($delayhour*60*60);
++
++            $userspendtime=0;
++
++           //name should be compare
++
++            if($module->module == 17) { //for scorm;
++                //require_once($CFG->dirroot.'/mod/scorm/locallib.php');
++                $scoes = get_records_select('scorm_scoes',"scorm='$module->instance' ORDER BY id");
++                foreach ($scoes as $sco) {
++                    if ($sco->launch!='') {
++                        $track=scorm_get_tracks($module->instance,$userid,$attempt='');
++
++                        list($udpendhour, $uspendminute) = explode(":", $track);
++                        $userspendtime=$uspendhour*60*60 + $uspendminute*60;
++
++                        if( $userspendtime >= $reqminttime) {
++                            $complete  = true;
++                        }
++                        else {
++                            $complete  = true;
++                        }
++
++                    }
++                }//end for each
++            }//for scorm end
++
++
++
++
++        }
++
++
++
++    }
++
++
++
++
++    else {
++        $complete = false;
++    }
++
++    return $complete;
++}
++//----------------------------------author@Manish Kumar Tamta ------------------------------------------
++
++
++function write_locks_to_db($passmarks,  $tracking, $moduleid,$courseid) {
++    global $USER, $CFG, $course;
++
++    delete_records("course_module_locks", "moduleid", $moduleid);
++
++
++
++    while(list($predecessor, $passmark) = each($passmarks)) {
++
++        if (is_numeric($predecessor)) {
++            if ($passmark) {
++                $req='';
++                $lock->moduleid = $moduleid;
++                $lock->courseid = $course->id;
++                $lock->lockid = $predecessor;
++
++                foreach($passmark as $pass) {
++                    $req=$req.','.$pass;
++
++                }
++
++                //---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++                $lock->requirement= substr($req, 1 );
++
++                $lock->visiblewhenlocked = (isset($tracking->visiblewhenlocked)) ? $tracking->visiblewhenlocked : 1 ;
++                $lock->checkboxforcomplete = (isset($tracking->checkboxforcomplete)) ? $tracking->checkboxforcomplete : 0 ;
++                $lock->stylewhencomplete = (isset($tracking->stylewhencomplete)) ? $tracking->stylewhencomplete : '' ;
++                $lock->checkboxesforprereqs = (isset($tracking->checkboxesforprereqs)) ? $tracking->checkboxesforprereqs : 1 ;
++                $lock->stylewhenlocked = (isset($tracking->stylewhenlocked)) ? $tracking->stylewhenlocked : 'locked';
++
++                if($temp = get_record("course_modules",id,$predecessor)) {
++                    insert_record("course_module_locks", $lock);
++                }
++                unset($temp);
++                unset($lock);
++            }
++        }
++
++    }
++
++    reset($passmarks);
++
++    insert_CourseModuleTimeTrackingactivity_lock2($passmarks,$courseid,false);
++
++    //----------------------------------author@Manish Kumar Tamta      27 August 2010------------------------------------------
++}
++
++
++function isunlocked($module) {
++    global $USER, $CFG, $course;
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++    if ($locks = islocked_ESP2($module)) {
++
++        foreach($locks as $key=>$value)
++            if ($value["overallstatus"] == "closed") {
++                return false;
++            }
++
++
++
++    }
++//----------------------------------author@Manish Kumar Tamta      27 August 2010------------------------------------------	return true;
++
++
++}
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++/*description : this method return all the field of course_module_locks for a particular module id
++ * it is need, because we can trace the maxtime, mintime, requirement, etc..
++ * @param1: $moduleid = id of the module
++ * return : tuple of the "course_module_locks" table for maching moduleid
++*/
++
++
++function get_CourseModuleLocksactivity_lock2($moduleid) {
++
++    $record= get_records("course_module_locks", "moduleid", $moduleid);
++
++    if(is_array(($record)))
++        $record=current($record);
++
++    return $record;
++
++}
++
++
++
++//----------------------------------author@Manish Kumar Tamta      24 August 2010------------------------------------------
++
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++/*description : changes needed
++ * return : tuple of the "course_module_locks" table for maching moduleid
++*/
++
++
++
++function get_CourseModuleTimeTrackingactivity_lock2($courseid,$moduleid) {
++
++    $record= get_records("course_module_time_tracking", "moduleid", $moduleid);
++
++    if(is_array(($record)))
++        $record=current($record);
++
++    return $record;
++
++}
++//----------------------------------author@Manish Kumar Tamta  ------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++/*description : add or update record into "course_module_time_tracking" table.
++ *
++ * returns: passmarks if successfully inserted
++ * returns: false, if unable to insert.
++ *
++ * arg@$passmarks= object contains an array of lockid associated with arrayof inserted record.
++ * arg@$courseid=courseid of the lockid modules
++ * arg@$update= whether adds new entry or updates existing entry in table
++ *
++*/
++
++
++function insert_CourseModuleTimeTrackingactivity_lock2($passmarks,$courseid,$update=true) {
++
++    while(list($predecessor, $passmark) = each($passmarks)) {
++        //checking if(get_record("course_module_time_tracking", "id",$predecessor ))
++
++        if (is_numeric($predecessor)) {
++            $cmtt = get_record("course_module_time_tracking", "moduleid",$predecessor );
++
++            if(!$cmtt) {
++
++
++                if ($passmark) {
++
++                    if($cm = get_record("course_modules", "id",$predecessor )) {
++
++                        $fields=new object();
++                        $fields->courseid=$courseid;
++                        $fields->moduleid=$predecessor;
++                        $fields->instance=(isset($passmark['instance'])) ?$passmark['instance'] : 1 ;
++                        $fields->mintime=(isset($passmark['mintime'])) ? $passmark['mintime']:"00:00";
++                        $fields->maxtime=(isset($passmark['maxtime'])) ? $passmark['maxtime']:"00:00";
++
++                        insert_record("course_module_time_tracking",$fields );
++
++                        unset($fields);
++
++                    }
++                }
++
++
++            }
++
++            else {
++
++                if($update) {
++                    $fields=new object();
++                    $fields->courseid=$courseid;
++                    $fields->moduleid=$predecessor;
++                    $fields->instance=(isset($passmark['instance'])) ?$passmark['instance'] : 1 ;
++                    $fields->mintime=(isset($passmark['mintime'])) ? $passmark['mintime']:"00:00";
++                    $fields->maxtime=(isset($passmark['maxtime'])) ? $passmark['maxtime']:"00:00";
++                    $fields->id = $cmtt->id;
++
++                    update_record("course_module_time_tracking", $fields);
++
++                    unset($fields);
++                }
++            }
++
++        }
++
++    }
++
++    reset($passmarks);
++    return true;
++
++}
++
++
++//----------------------------------author@Manish Kumar Tamta      24 August 2010------------------------------------------
++
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++//not needed for activity lockin
++function update_CourseModuleTimeTracking_ESP2($courseid,$modid,$timetrack) {
++    if(set_maxtime()) {
++        set_mintime();
++        set_grade();
++        return $timetrack;
++    }
++
++    else false;
++
++}
++//----------------------------------author@Manish Kumar Tamta     24 August 2010------------------------------------------
++
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++function courseOrCategoryDeleted_ESP2($courseid,$moduleid) {
++
++//whenever we lock there will be an entry in "course_module_time_tracking"
++    //when we delete so first delete the entry from the "course_module_time_tracking" and delete entry from
++    //course_module_locks
++    //course_module_locks if contains entry then course_module_time_tracking must contain the module id.
++    //course_module_time_tracking if contain entry, then course_module_locks may contain entry
++    // because as we are considering course_module_time_tracking is a part of the module table with some new entry
++
++    $status = false;
++    if($courseid) {
++   
++
++        delete_records("course_module_time_tracking", "courseid", $courseid);
++       delete_records("course_module_locks", "courseid", $courseid);
++
++        
++
++    
++    }
++
++    else if (!$courseid && $moduleid ){
++
++        if(delete_records("course_module_time_tracking", "moduleid", $moduleid)) {
++        delete_records("course_module_locks", "moduleid", $moduleid);
++        delete_records("course_module_locks", "lockid", $moduleid);
++        $status=true;
++        }
++
++    }
++
++
++
++    return $status;
++}
++//----------------------------------author@Manish Kumar Tamta     27 September 2010------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++/*description : add or update record into "course_module_time_tracking" table.
++ */
++
++function unlock($moduleid,$type){
++
++    if(isset($moduleid) && isediting()){
++		
++        delete_records("course_module_locks", "moduleid", $moduleid);
++        if(strcasecmp($type,"move") == 0)
++        delete_records("course_module_locks", "lockid", $moduleid);
++
++        return $moduleid;
++
++    }
++
++    return $false;
++
++}
++
++//----------------------------------author@Manish Kumar Tamta      24 August 2010------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++//not needed for activity locking
++function set_maxtime_ESP2($courseid, $moduleid,$instanceid,$timetrack) {
++    return set_field("course_module_time_tracking", "maxtime", $timetrack->maxtime, "courseid",$courseid, "modid",$modid);
++}
++//----------------------------------author@Manish Kumar Tamta     24 August 2010------------------------------------------
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++//not needed for activity locking
++function set_mintime_ESP2($courseid, $moduleid,$instanceid,$timetrack) {
++    return set_field("course_modules_time_tracking", "mintime", $timetrack->mintime,"courseid",$courseid, "modid", $id);
++}
++//----------------------------------author@Manish Kumar Tamta     24 August 2010------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++//not needed for activity locking
++function set_grade_ESP2($courseid, $moduleid,$instanceid,$timetrack) {
++    return set_field("course_modules_time_tracking", "mintime", $timetrack->grade,"courseid",$courseid, "modid", $id);
++}
++
++//----------------------------------author@Manish Kumar Tamta     24 August 2010------------------------------------------
++
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++
++function check_locks($module, $showbutton=1) {
++
++    global $USER, $CFG, $course, $COURSE;
++    if ($locks = islocked_ESP2($module)) {
++
++        $overallstatus="open";
++        foreach($locks as $key=>$value) {
++
++            if($value["overallstatus"] == "closed")
++                $overallstatus="closed";
++        }
++        $modcontext = get_context_instance(CONTEXT_MODULE, $module->id);
++        // no permission to edit
++        if (!has_capability('moodle/course:manageactivities', $modcontext) && !isguestuser($USER)) {
++            if (strcasecmp($overallstatus,"closed") == 0) {
++                ksort($locks);
++                reset($locks);
++                return print_lock_notice($locks);
++//----------------------------------author@Jalpa     27 August 2010------------------------------------------
++            }
++        }
++    }
++    return false;
++}
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++function print_lock_notice($locks) {
++    global $USER, $CFG, $course;
++
++    require_once($CFG->dirroot.'/course/lib.php');
++    $navigation = build_navigation('');
++    print_header("$course->shortname", $course->fullname, $navigation,'','',true);
++    print_box(get_string("activitycurrentlylocked", "lock"));
++    print_lock_notice_to_student_activity_lock2($locks);
++    echo "<br/><br/>";
++    print_continue("$CFG->wwwroot/course/view.php?id=$course->id");
++    if(empty($course)) {
++        print_footer($COURSE);
++    }else {
++        print_footer($course);
++    }
++    exit();
++
++}
++
++//----------------------------------author@Jalpa     27 August 2010------------------------------------------
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++function print_lock_notice_to_student_activity_lock2($locks) {
++    global $USER, $CFG, $course;
++
++    require_once($CFG->dirroot.'/course/lib.php');
++    $id   = required_param('id', PARAM_INT);
++    get_all_mods($course->id, $mods, $modnames, $modnamesplural, $modnamesused);
++    $mod1 = &$mods[$id];
++    $instance1 = get_record("$mod1->modname", "id", "$mod1->instance");
++
++ print_heading(get_string('lockedbythisactivity', 'lock')." $instance1->name","", 4 );
++
++ echo "<table class=\"generaltable boxaligncenter boxaligncenter\" cellspacing=\"0\" cellpadding=\"0\" width=\"80%\"> <tr>
++     <th class=\"header c0\" scope=\"\" style=\"vertical-align: top; text-align: left; width: 15%; white-space: nowrap;\"> </td>
++     <th class=\"header c1\" scope=\"\" style=\"vertical-align: top; text-align: left; width: 42.5%; white-space: nowrap; \"> Required </td>
++     <th class=\"header c2\" scope=\"\" style=\"vertical-align: top; text-align: left; width: 42.5%; white-space: nowrap;\" >Actual</td>
++     </tr>
++
++
++     <tr class=\"r0  lastrow\">
++     <td  colspan=\"3\" cellspacing=\"0\" cellpadding=\"0\" class=\"cell c0\" style=\"text-align: left; width: 100%;\">";
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++// changed
++
++
++    $table1->class = 'generaltable boxaligncenter';
++    $table1->head = array(get_string('activity_column', 'lock'),
++            get_string('mintimespent_column', 'lock'),
++           // get_string('maxtimespent_column', 'lock'),
++            get_string('access_column', 'lock'),
++            get_string('grade_column', 'lock'),
++            get_string('mytime','lock'),
++            get_string('myaccess','lock'),
++            get_string('mygrade','lock')	);
++
++    $table1->align = array('left', 'left','left','left','left','left','left');
++    $table1->size = array('15%','14%','14%','14%','14%','14%','15%');
++
++    $counter1 = 1;
++    while(list($modid, $lock) = each($locks)) {
++        $mod = &$mods[$modid];
++
++        if($mod) {
++            $row = array();
++            $instance = get_record("$mod->modname", "id", "$mod->instance");
++            $row[0] = "<A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\"".
++                    "   TITLE=\"$mod->modfullname\">".
++                    "<IMG BORDER=0 VALIGN=absmiddle SRC=\"$CFG->wwwroot/mod/$mod->modname/icon.gif\" ".
++                    "HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\"></A>&nbsp;&nbsp;".
++                    "<A HREF=\"$CFG->wwwroot/mod/$mod->modname/view.php?id=$mod->id\">".
++                    "$instance->name</A>";
++            // Time Spent - according to Activity Locking and User Time spent on the Activity
++            if(isset($lock['T'])) {
++
++                $usertimevalue = sec2hms($lock['T']["usertime"],true);
++               // $usertimevalue = $usertime['hours'].':'.$usertime['minutes'];
++                $mintimevalue = sec2hms($lock['T']["mintime"],true);
++              //  $mintimevalue = $mintime['hours'].':'.$mintime['minutes'];
++                $maxtimevalue = sec2hms($lock['T']["maxtime"],true);
++              //  $maxtimevalue = $maxtime['hours'].':'.$maxtime['minutes'];
++
++                $row[1] = isset($lock['T']["mintime"]) ? $mintimevalue : '00:00';
++               // $row[] = isset($lock['T']["maxtime"]) ? $maxtimevalue : '0';
++                $row[4] = (isset($lock['T']["usertime"]) && $lock['T']["usertime"] >= $lock['T']["mintime"] ) ? '<div class="highlight">'.$usertimevalue.'</div>' : '<div style="background:red">'.$usertimevalue.'</div>';
++
++
++            }else {
++                $row[1] = $row[4] = '-';
++            }
++
++            // Access or completion - is user specific and the activity Locking
++            if(isset($lock['A'])) {
++                $row[2] = " <IMG BORDER=0 VALIGN=absmiddle SRC=\"$CFG->pixpath/t/clear.gif\" ".
++                        " HEIGHT=16 WIDTH=16 ALT=\"$mod->modfullname\" title='".get_string("title_access","lock")."'>";
++                if(isset($lock['A']["complete"]) && $lock['A']["complete"] ) {
++                    $row[5] = '<div style="background:#AAFFAA">Y</div>';
++                }else {
++                    $row[5] = '<div style="background:red">N</div>';
++                }
++            }else {
++                $row[2] = $row[5] = '-';
++            }
++
++            // Grade criteria - according to the gradepass set in category and items under the grade and User attempted the best grade
++            // displays the usergrade in form of highlight format 'GREEN'=='PASS' & 'RED'=='FAIL'
++            if(isset($lock['G'])) {
++                $row[3] = $lock['G']["passgrade"];
++                if($lock['G']["usergrade"] < $lock['G']["passgrade"]) {
++                    $row[6] = '<div style="background:red">'.$lock['G']["usergrade"].'</div>'; // condition showing by highligting using red color that its failed
++                }else {
++                    $row[6] = '<div style="background:#AAFFAA">'.$lock['G']["usergrade"].'</div>';
++                } // conditon showing pass using green color highlight style
++            }else {
++                $row[3] = $row[6] = '-';
++            }
++
++            ksort($row);
++            $table1->data[$counter1] = $row;
++            $counter1++;
++        }
++    }
++
++    $table1->width="100%";
++    print_table($table1);
++
++
++    unset($instance1);
++    unset($mods);
++    unset($table1);
++    unset($counter1);
++    unset($locks);
++    unset($mod1);
++
++    echo "</tr></table>";
++   	echo "</td></tr></table><br>";
++   	echo get_string('prerequisitenotice', 'lock');
++}
++
++
++
++
++//----------------------------------author@Jalpa     27 August 2010------------------------------------------
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++function get_locks($coursemodule) {
++    global $CFG;
++
++    $sql =  " SELECT * FROM ".$CFG->prefix."course_module_locks ".
++            " WHERE courseid=$coursemodule->course".
++            " AND (moduleid = $coursemodule->id OR lockid = $coursemodule->id)";
++
++    return (get_records_sql($sql));
++
++}
++//----------------------------------author@Manish Kumar Tamta     27 August 2010------------------------------------------
++
++
++
++
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-------------------------------------
++function sec2hms ($sec, $padHours = false)
++  {
++
++    $hms = "";
++
++    $hours = intval(intval($sec) / 3600);
++
++    $hms .= ($padHours)
++          ? str_pad($hours, 2, "0", STR_PAD_LEFT). ":"
++          : $hours. ":";
++    $minutes = floatval(($sec / 60) % 60);
++
++     $hms .= str_pad($minutes, 2, "0", STR_PAD_LEFT);
++
++    return $hms;
++
++  }
++
++
++//----------------------------------author@Manish Kumar Tamta     27 August 2010------------------------------------------
++
++
++
++
++
++?>
+diff -Naur moodle1.9.9/lib/moodlelib.php moodle1.9.9A/lib/moodlelib.php
+--- moodle1.9.9/lib/moodlelib.php	2010-06-05 05:33:28.000000000 +0530
++++ moodle1.9.9A/lib/moodlelib.php	2011-03-16 15:10:54.000000000 +0530
+@@ -1997,6 +1997,14 @@
+             exit;
+         }
+     }
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added--------------------------------------
++
++//Check to see if Activity Locking criteria have been met
++	require_once($CFG->libdir.'/locklib.php');
++	global $cm;
++	check_locks($cm);
++
++//-----------------------------------------------author@Jalpa Manoj Bhavsar ----- 9 September 2010 --------------------------------
+ 
+ /// groupmembersonly access control
+     if (!empty($CFG->enablegroupings) and $cm and $cm->groupmembersonly and !has_capability('moodle/site:accessallgroups', get_context_instance(CONTEXT_MODULE, $cm->id))) {
+@@ -3694,6 +3702,13 @@
+                             if ($cm) {
+                                 // delete cm and its context in correct order
+                                 delete_records('course_modules', 'id', $cm->id);
++//---------------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added--------------------------------------
++                                //entry from table "course_module_locks" and "couse_module_time_tracking" should be removed
++                                require_once($CFG->libdir.'/locklib.php');
++                     
++                                courseOrCategoryDeleted_ESP2($course->id);
++//-----------------------------------------------author@Manish Kumar Tamta 27 September 2010 --------------------------------
++                                
+                                 delete_context(CONTEXT_MODULE, $cm->id);
+                             }
+                         }
+diff -Naur moodle1.9.9/mod/scorm/db/access.php moodle1.9.9A/mod/scorm/db/access.php
+--- moodle1.9.9/mod/scorm/db/access.php	2008-12-03 22:45:52.000000000 +0530
++++ moodle1.9.9A/mod/scorm/db/access.php	2011-03-15 14:45:13.549602000 +0530
+@@ -85,7 +85,19 @@
+             'editingteacher' => CAP_ALLOW,
+             'admin' => CAP_ALLOW
+         )
++    ),
++//--------------------------SCORM/QUIZ Activity Locking (Conditional Activities), added-----------------------
++    'mod/scorm:deletescormcap' => array(      
++        'captype' => 'write',
++        'contextlevel' => CONTEXT_MODULE,
++        'legacy' => array(
++            'admin' => CAP_ALLOW,
++    		'teacher' => CAP_PREVENT,
++    		'student' => CAP_PREVENT,
++    		'editingteacher' => CAP_PREVENT
++        )
+     )
++//-----------------------------------------author@Jalpa M Bhavsar ----- 19th Oct, 2010 ------------------------
+ );
+ 
+-?>
+\ No newline at end of file
++?>
+diff -Naur moodle1.9.9/pix/t/clock.gif moodle1.9.9A/pix/t/clock.gif
+--- moodle1.9.9/pix/t/clock.gif	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/pix/t/clock.gif	2009-05-29 14:38:56.000000000 +0530
+@@ -0,0 +1,2 @@
++GIF89a  ³     ÿÿÿÄ                                    €€€!ù   ,       0ÈI« ç
++ä“ˆAX’¦v®œh¥-¥mS ;
+\ No newline at end of file
+diff -Naur moodle1.9.9/pix/t/closed.gif moodle1.9.9A/pix/t/closed.gif
+--- moodle1.9.9/pix/t/closed.gif	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/pix/t/closed.gif	2009-05-29 14:38:56.000000000 +0530
+@@ -0,0 +1 @@
++GIF89a  ÷     )))111BBBJJJRRRccc{{{¥¥¥µµµ½½½ÖÖÖŞŞŞïïï÷÷÷ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ,       ' %H° A	 *T(ÀA‡6”1BAˆ/N4ˆ‘âÂ ;
+\ No newline at end of file
+diff -Naur moodle1.9.9/pix/t/lock.gif moodle1.9.9A/pix/t/lock.gif
+--- moodle1.9.9/pix/t/lock.gif	2007-06-01 09:32:37.000000000 +0530
++++ moodle1.9.9A/pix/t/lock.gif	2009-05-29 14:38:56.000000000 +0530
+@@ -1,2 +1,2 @@
+-GIF89a  ¥ ÷÷ïãØš‘éçÍ“ŠÿşJ·¶¸ÒÆ¶°Wìàle•"*'+ÏÈc×Ö×vsvJHMÏË‹¹´lŸ–êá7ZS”Iš’„ÛØ©Ä¿sˆ€]X$>;A‘Œÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ!ù
+-  ,       /@P¨`b™46™Ã%ôUX¯Îä§ÀåfŸƒqGÃÅò÷h·³ãxÜ ;
+\ No newline at end of file
++GIF89a  ÷     ksÿ½!ÿïJÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           !ù   ,       0 -H° €ƒ 
++ZH8aC‚Fœˆ°bÃŠ/btˆpÀ€Œz¹ğ`€  ;
+\ No newline at end of file
+diff -Naur moodle1.9.9/pix/t/open.gif moodle1.9.9A/pix/t/open.gif
+--- moodle1.9.9/pix/t/open.gif	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/pix/t/open.gif	2009-05-29 14:38:56.000000000 +0530
+@@ -0,0 +1 @@
++GIF89a  ÷        )  c  „ „ŒŒ!”!B¥BJ¥JR­Rk¹k{½{ŒÆŒ¤Ò¤µŞµÎçÎÖïÖç÷ç÷ÿ÷ÿÿÿÿÿÿ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           !ù   ,       K -80B‚(°  ¡C €ğÁ 	F0 "C&L@À€áD0iÒd‚d4	 ‚=.˜€sâÃ‡ ;
+\ No newline at end of file
+diff -Naur moodle1.9.9/pix/t/Thumbs.db moodle1.9.9A/pix/t/Thumbs.db
+--- moodle1.9.9/pix/t/Thumbs.db	1970-01-01 05:30:00.000000000 +0530
++++ moodle1.9.9A/pix/t/Thumbs.db	2009-05-29 14:38:56.000000000 +0530
+@@ -0,0 +1,43 @@
++ĞÏà¡±á                >  şÿ	                               şÿÿÿ        ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿıÿÿÿ   şÿÿÿ            	   şÿÿÿ
++         şÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿR o o t   E n t r y                                               ÿÿÿÿÿÿÿÿ                               `
++A!RÈ   €      1                                                                ÿÿÿÿÿÿÿÿÿÿÿÿ                                        7      2                                                                   ÿÿÿÿÿÿÿÿ                                       M      3                                                                      ÿÿÿÿ                                       #                              	   
++         şÿÿÿ                                       şÿÿÿ                !   "   #   $   %   &   '   şÿÿÿ)   *   +   ,   -   .   /   0   1   2   3   4   şÿÿÿ6   7   8   9   :   ;   <   =   >   ?   @   A   şÿÿÿC   D   E   şÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ      +  ÿØÿà JFIF  ` `  ÿÛ C 
++
++
++ÿÛ C		ÿÀ   " ÿÄ           	
++ÿÄ µ   } !1AQa"q2‘¡#B±ÁRÑğ$3br‚	
++%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyzƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚáâãäåæçèéêñòóôõö÷øùúÿÄ        	
++ÿÄ µ  w !1AQaq"2B‘¡±Á	#3RğbrÑ
++$4á%ñ&'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz‚ƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚâãäåæçèéêòóôõö÷øùúÿÚ   ? ôŸ~ß¾ış6ø»áÏo|qã{‹-3H{»ø!Šu¸Ö$†I¯®¢Iî³m±Íc¶Ú""‰£”GZO²¾|kĞÿ hŸ„úÄ/ÚêZ.±çıR4á|©ä·ª;¨ËDÄat<ÉÛÅŸ†?nÏÚWû2çìßÚ>
++}×îÕüÈ$Òì7§Ì3ÈÁ}ûÿ ¸ÿ “øeÿ q?ı:]×-:ÎuªRká¶·ŞëÓOÄ¦•“?ÿÙ               A  ÿØÿà JFIF  ` `  ÿÛ C 
++
++
++ÿÛ C		ÿÀ   " ÿÄ           	
++ÿÄ µ   } !1AQa"q2‘¡#B±ÁRÑğ$3br‚	
++%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyzƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚáâãäåæçèéêñòóôõö÷øùúÿÄ        	
++ÿÄ µ  w !1AQaq"2B‘¡±Á	#3RğbrÑ
++$4á%ñ&'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz‚ƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚâãäåæçèéêòóôõö÷øùúÿÚ   ? úKñÏÄ/]|+ñT~1ñf‹¥ü@ĞŸ[‚ÃGğÄ:®‹¤]9±k+²–Oqä´w3yÓ½Õ¸so+#[+*Çô/ÂÂĞøYàß}‡û3ş-ËWû›æıŸí$¾^ı«»nünÚ3Œàt¯Ì¿‹ß´ÄŸ†Ÿ·İ‡ìÿ áoÜh_	&ñ‡£.e(ÖöW±ÚµÄ÷[>Ñn£íˆü©SÈ]‹–± _ÕM'I±Ğ4«-3L²·Ó´Û(RÚÖÎÒ%Š"E
++‘¢(UT    
++ ÿÙ                                                           ÿØÿà JFIF  ` `  ÿÛ C 
++
++
++ÿÛ C		ÿÀ   " ÿÄ           	
++ÿÄ µ   } !1AQa"q2‘¡#B±ÁRÑğ$3br‚	
++%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyzƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚáâãäåæçèéêñòóôõö÷øùúÿÄ        	
++ÿÄ µ  w !1AQaq"2B‘¡±Á	#3RğbrÑ
++$4á%ñ&'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz‚ƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚâãäåæçèéêòóôõö÷øùúÿÚ   ? û#à‡„|yñ/à¿€|]©üqñÄ–¿áı?UºŠÓOĞ–{håuŒ6–Ä(g IÆ2OZô¿ÙëÅ:§~|4ñ&·uöİkXğÎ™¨_\ùk<¶±É#í@rÌN 3À¿
++ü'ÿ ı¢|á]Ãz'Ä?±hº=”:}·ö&'“H#7=¹fÂ¨bIÇ$šı¿ı“¿äÖ>ÿ Ø™£é4ÿÙ                             4                                                                ÿÿÿÿ   ÿÿÿÿ                                    (   9      5                                                                ÿÿÿÿ   ÿÿÿÿ                                    5   ?      C a t a l o g                                                     ÿÿÿÿÿÿÿÿÿÿÿÿ                                    B   Î                                                                           ÿÿÿÿÿÿÿÿÿÿÿÿ                                                      -  ÿØÿà JFIF  ` `  ÿÛ C 
++
++
++ÿÛ C		ÿÀ   " ÿÄ           	
++ÿÄ µ   } !1AQa"q2‘¡#B±ÁRÑğ$3br‚	
++%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyzƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚáâãäåæçèéêñòóôõö÷øùúÿÄ        	
++ÿÄ µ  w !1AQaq"2B‘¡±Á	#3RğbrÑ
++$4á%ñ&'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz‚ƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚâãäåæçèéêòóôõö÷øùúÿÚ   ? ôŸÚŸöéømğßö—ñG‚>!Eñ"}7@Ó4Ø¬ ğ^«6˜«{2Ëqu#½½õ³Ì­Úz¨¶ÆŠmª›™¤ú«öBø½7ÇÙ£áïîä¸ŸRÔtÅ‹Pæái¯`f·¹$"«ÍŒ ò²ü«÷GåÇíâOÃ·gí+ı™söoí>ë÷jşdivÓæÀä`Æ¾ıÿ ‚\É‰ü2ÿ ¸Ÿş.ë–g:Õ)5ğÛ[ïué§âSJÉŸÿÙ             3  ÿØÿà JFIF  ` `  ÿÛ C 
++
++
++ÿÛ C		ÿÀ   " ÿÄ           	
++ÿÄ µ   } !1AQa"q2‘¡#B±ÁRÑğ$3br‚	
++%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyzƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚáâãäåæçèéêñòóôõö÷øùúÿÄ        	
++ÿÄ µ  w !1AQaq"2B‘¡±Á	#3RğbrÑ
++$4á%ñ&'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz‚ƒ„…†‡ˆ‰Š’“”•–—˜™š¢£¤¥¦§¨©ª²³´µ¶·¸¹ºÂÃÄÅÆÇÈÉÊÒÓÔÕÖ×ØÙÚâãäåæçèéêòóôõö÷øùúÿÚ   ? öï…ŸükñOÀµÓ¾1øñ>&kz~›ss§Üévp	ìâ¹šğ(ÓK›U¿8fm«‘Õô?ìı¤é<øğëÅö•cªëšç‡tıVşöòİf’k‰í£–F,ÀœnvÀè£   ğÓÁß·ŸÇ/ .›ıƒã+{Ó´‹mÖa éÒKŒÁæ=¹b ’IlÄàc÷SöNÿ “Xø7ÿ bfÿ ¤0×,)JîU]ûy/óîqÓ£6å*íK];%ş}ÙÿÙ      `   `   (       öî—¿Åu n l o c k . g i f     &       šocÈ€Åc l o c k . g i f     (       å?œ»\Åc l o s e d . g i f     $       .ƒ“ÇTÅl o c k . g i f     $       ®ckÃ\Åo p e n . g i f                                                                                                                                                                                       
+\ No newline at end of file
+diff -Naur moodle1.9.9/pix/t/unlock.gif moodle1.9.9A/pix/t/unlock.gif
+--- moodle1.9.9/pix/t/unlock.gif	2007-06-01 09:32:37.000000000 +0530
++++ moodle1.9.9A/pix/t/unlock.gif	2009-05-29 14:38:56.000000000 +0530
+@@ -1,2 +1 @@
+-GIF89a  ¥ ÷÷ïãØš‘éçÍ“ŠÿşJ·¶¸ÒÆ¶°Wìàle•"*'+ÏÈc×Ö×vsvJHMÏË‹¹´lŸ–êá7ZS”Iš’„ÛØ©Ä¿sˆ€]X$>;A‘Œÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ!ù
+-  ,   	   *@pH*EÏñHd*‘B§TA­"Ÿ‚V{ıŒÃWé=Š»t	n·ƒ ;
+\ No newline at end of file
++GIF89a  ÷     ksÿïJÿÿÿç÷ÿ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 !ù   ,      @: 	Hp €ƒ@`€@† à¢@‰j4x0@€…6@R"D‹	jÜ˜q¥Å…	A ;
+\ No newline at end of file
+diff -Naur moodle1.9.9/README.txt moodle1.9.9A/README.txt
+--- moodle1.9.9/README.txt	2007-11-15 08:37:04.000000000 +0530
++++ moodle1.9.9A/README.txt	2011-03-29 14:52:19.470276000 +0530
+@@ -34,3 +34,56 @@
+ Good luck and have fun!
+ Martin Dougiamas, Lead Developer
+ 
++
++==============================================================================================================
++			Following files replaced for SCORM/QUIZ Activity Locking (Conditional Activity) by C-DAC Mumbai Team 
++==============================================================================================================
++
++
++=================================================================================
++Following files   M O D I F I E D    for SCORM/QUIZ Activity Locking by C-DAC Mumbai Team
++=================================================================================
++1.	/moodle/backup/backuplib.php
++2.	/moodle/backup/restorelib.php
++3.	/moodle/blocks/activity_locking/admin/block_admin.php
++4. 	/moodle/course/lib.php						 
++5.	/moodle/course/modedit.php
++6.	/moodle/course/moodleform_mod.php
++7.	/moodle/course/mod.php
++8.	/moodle/lib/formslib.php
++9.	/moodle/lib/moodlelib.php					 
++10.	/moodle/mod/scorm/db/access.php
++
++
++===================================================================================
++Following files  A D D E D   N E W     for SCORM/QUIZ Activity Locking by C-DAC Mumbai Team
++===================================================================================
++1.	/moodle/blocks/activity_locking/block_activity_locking.php
++2.	/moodle/blocks/activity_locking/db/install.xml
++3.	/moodle/blocks/activity_locking/db/mysql.php
++4.	/moodle/blocks/activity_locking/db/mysql.sql
++5.	/moodle/blocks/activity_locking/db/upgrade.php 	
++6.	/moodle/course/lock.php	
++7.	/moodle/course/activity_lockmoveactivtiy.php 
++8.	/moodle/course/lock_unlock_delete.html
++9.	/moodle/course/lock_move_delete.html
++10.	/moodle/course/report/activity_lock_report/index.php
++11.	/moodle/course/report/activity_lock_report/mod.php
++12.	/moodle/course/report/activity_lock_report/lib.php
++13.	/moodle/course/report/activity_lock_report/report.php
++14.	/moodle/lang/en-utf8/help/al/locking.html 
++15.	/moodle/lang/en-utf8/help/al/lockingprerequisite.html
++16.	/moodle/lang/en-utf8/help/al/lockingsetting.html
++17.	/moodle/lang/en-utf8/help/al/lockssetting.html
++18.	/moodle/lang/en-utf8/help/al/movinglocks.html
++19.	/moodle/lang/en-utf8/help/al/timesetting.html
++20.	/moodle/lang/en-utf8/help/al/unlocks.html
++21.	/moodle/lang/en_utf8/lock.php 	
++22.	/moodle/lib/locklib.php 					 
++23.	/moodle/lib/form/timeselector.php
++24.	/moodle/pix/t/lock.gif
++25.	/moodle/pix/t/unlock.gif
++26.	/moodle/pix/t/open.gif
++27.	/moodle/pix/t/closed.gif
++28.	/moodle/pix/t/clock.gif
++	
