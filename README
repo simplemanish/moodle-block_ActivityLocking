@@ -8,7 +8,7 @@ applying patch on  Linux system:
 2) place the approperiate patch file in the approperiate moodle version installation (AL_moodle1.9.3+.patch for moodle1.9.3+ and  AL_moodle1.9.9.patch for moodle1.9.9). eg moodle/AL_moodle1.9.x.patch
 3) open termininal and navigate to the installed moodle directory
 4) run the command "patch --dry-run --binary -p1 < AL_moodle1.9.x.patch"
-5) here --dry-run option actually doesnt apply the patch only simulates, if you dont get any error than go ahead with the command that actually will apply the patch. 
+5) here --dry-run option actually doesnt apply the patch only simulates, if you dont get any error than go ahead with the following command that actually will apply the patch. 
 6) "patch --binary -p1 < AL_moodle1.9.x.patch"
 7) login as administrator in moodle and click on the notification. this will show the creation of some database and the patch will be applied.
 
