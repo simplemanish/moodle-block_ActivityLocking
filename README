@@ -1,0 +1,13 @@
+Activity Locking patch for moodle1.9.9
+
+
+Installation steps:
+prerequisite: moodle1.9.9 moodle installed in your system
+in Linux :
+1) download the patch file from 'address'
+2) copy the AL_moodle1.9.9.patch file to your moodle
+3) open termininal and go the install moodle directory
+4) run the command "patch  --binary -p1 < AL_moodle1.9.9.path
+5) login as an admin in installed moodle and click on the notification llink
+6) Done , now the installed moodle will have activity locking feature
+
