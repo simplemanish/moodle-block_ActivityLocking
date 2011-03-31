@@ -1,13 +1,26 @@
-Activity Locking patch for moodle1.9.9
+		Activity Locking patch for moodle1.9.3+ and  moodle1.9.9
+		========================================================
+		========================================================
 
+applying patch on  Linux system:
+================================
+1) download the patch file 
+2) place the approperiate patch file in the approperiate moodle version installation (AL_moodle1.9.3+.patch for moodle1.9.3+ and  AL_moodle1.9.9.patch for moodle1.9.9). eg moodle/AL_moodle1.9.x.patch
+3) open termininal and navigate to the installed moodle directory
+4) run the command "patch --dry-run --binary -p1 < AL_moodle1.9.x.patch"
+5) here --dry-run option actually doesnt apply the patch only simulates, if you dont get any error than go ahead with the command that actually will apply the patch. 
+6) "patch --binary -p1 < AL_moodle1.9.x.patch"
+7) login as administrator in moodle and click on the notification. this will show the creation of some database and the patch will be applied.
 
-Installation steps:
-prerequisite: moodle1.9.9 moodle installed in your system
-in Linux :
-1) download the patch file from 'address'
-2) copy the AL_moodle1.9.9.patch file to your moodle
-3) open termininal and go the install moodle directory
-4) run the command "patch  --binary -p1 < AL_moodle1.9.9.path
-5) login as an admin in installed moodle and click on the notification llink
-6) Done , now the installed moodle will have activity locking feature
+applying patch on Windows system
+================================
+
+1) Download GnuWin from http://downloads.sourceforge.net/project/gnuwin32/patch/2.5.9-7/patch-2.5.9-7-bin.zip?use_mirror=space
+2) install it on your system
+3) place the approperiate patch file in the approperiate moodle version installation (AL_moodle1.9.3+.patch for moodle1.9.3+ and  AL_moodle1.9.9.patch for moodle1.9.9). eg moodle/AL_moodle1.9.x.patch
+4) open up command line window  navigate to the installed moodle directory
+5) run the command "location_ of_ the_patch.exe --dry-run --binary -p1 < AL_moodle1.9.x.patch"
+6) here --dry-run option actually doesnt apply the patch only simulates, if you dont get any error than go ahead with the following command that actually will apply the patch.
+7) "location_of_the_patch.exe --binary -p1 < AL_moodle1.9.x.patch"
+8)login as administrator in moodle and click on the notification. this will show the creation of some database and the patch will be applied.
 
