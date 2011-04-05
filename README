@@ -22,5 +22,5 @@ applying patch on Windows system
 5) run the command "location_ of_ the_patch.exe --dry-run --binary -p1 < AL_moodle1.9.x.patch"
 6) here --dry-run option actually doesnt apply the patch only simulates, if you dont get any error than go ahead with the following command that actually will apply the patch.
 7) "location_of_the_patch.exe --binary -p1 < AL_moodle1.9.x.patch"
-8)login as administrator in moodle and click on the notification. this will show the creation of some database and the patch will be applied.
+8)login as administrator in moodle and click on the notification. this will show the creation of some database table and the patch will be applied.
 
